@@ -13,6 +13,7 @@ import com.lucasalfare.flgf.b_usecase.GameEngine
 import com.lucasalfare.flgf.c_infra.fake.FakeClock
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -396,5 +397,94 @@ class GameEngineTest {
     val boostedScore = state.scoreState.score
 
     assertTrue(boostedScore > normalScore)
+  }
+
+  @Test
+  fun `should gain sustain score with special active`() {
+    val clock = FakeClock(0.0)
+    val engine = createEngine(clock)
+
+    val note = Note(1.0, 1, 2.0, hopo = false, special = false)
+
+    var state = baseState(Song("sustain", "t", 10.0, listOf(note))).copy(
+      specialState = SpecialState(energy = 100.0, active = true)
+    )
+
+    // hit start
+    clock.time = 1.0
+    state = engine.tick(state, InputFrame(1.0, setOf(1)))
+
+    val afterHitScore = state.scoreState.score
+
+    // hold sustain
+    clock.time = 2.0
+    state = engine.tick(state, InputFrame(2.0, setOf(1)))
+
+    val afterSustainScore = state.scoreState.score
+
+    assertTrue(afterSustainScore > afterHitScore)
+  }
+
+  @Test
+  fun `should stop gaining sustain bonus after special ends`() {
+    val clock = FakeClock(0.0)
+    val engine = createEngine(clock)
+
+    val note = Note(1.0, 1, 3.0, hopo = false, special = false)
+
+    var state = baseState(Song("sustain", "t", 10.0, listOf(note))).copy(
+      specialState = SpecialState(energy = 1.0, active = true)
+    )
+
+    // hit start
+    clock.time = 1.0
+    state = engine.tick(state, InputFrame(1.0, setOf(1)))
+
+    // special should drain and end quickly
+    clock.time = 2.0
+    state = engine.tick(state, InputFrame(2.0, setOf(1)))
+
+    val scoreDuringSpecial = state.scoreState.score
+
+    // now special is likely off
+    clock.time = 3.0
+    state = engine.tick(state, InputFrame(3.0, setOf(1)))
+
+    val scoreAfterSpecial = state.scoreState.score
+
+    // still increases, but slower than before (no multiplier)
+    assertTrue(scoreAfterSpecial > scoreDuringSpecial)
+    assertFalse(state.specialState.active)
+  }
+
+  @Test
+  fun `should continue sustain normally after special ends`() {
+    val clock = FakeClock(0.0)
+    val engine = createEngine(clock)
+
+    val note = Note(1.0, 1, 3.0, hopo = false, special = false)
+
+    var state = baseState(Song("sustain", "t", 10.0, listOf(note))).copy(
+      specialState = SpecialState(energy = 1.0, active = true)
+    )
+
+    // hit
+    clock.time = 1.0
+    state = engine.tick(state, InputFrame(1.0, setOf(1)))
+
+    // drain special
+    clock.time = 2.0
+    state = engine.tick(state, InputFrame(2.0, setOf(1)))
+
+    assertFalse(state.specialState.active)
+
+    // continue holding
+    clock.time = 3.0
+    state = engine.tick(state, InputFrame(3.0, setOf(1)))
+
+    val noteState = state.activeNotes.first()
+
+    assertEquals(NoteState.HOLDING, noteState.state)
+    assertTrue(noteState.sustainProgress > 0)
   }
 }
