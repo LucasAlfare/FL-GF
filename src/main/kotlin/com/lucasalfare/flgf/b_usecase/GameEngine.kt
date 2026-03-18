@@ -40,7 +40,6 @@ class GameEngine(
   private val specialSystem: SpecialSystem
 ) {
 
-  // TODO: rule mixed here is not good...
   private val sustainScorePerSecond = 50.0
 
   fun tick(state: GameState, input: InputFrame): GameState {
@@ -48,41 +47,40 @@ class GameEngine(
     if (state.status != GameStatus.PLAYING) return state
 
     val currentTime = clock.currentTime()
+    val deltaTime = currentTime - state.currentTime
 
-    val (spawnedNotes, nextIndex) = spawner.spawn(
-      state.copy(currentTime = currentTime)
-    )
+    var specialState = specialSystem.update(state.specialState, deltaTime)
 
-    var updatedNotes = spawnedNotes
+    if (input.activateSpecial) {
+      specialState = specialSystem.tryActivate(specialState)
+    }
+
+    val (spawned, nextIndex) = spawner.spawn(state.copy(currentTime = currentTime))
+
+    var notes = spawned
     var scoreState = state.scoreState
-    var specialState = state.specialState
 
-    // =============================
-    // 1. HIT DETECTION
-    // =============================
-    updatedNotes = updatedNotes.map { active ->
+    // HIT
+    notes = notes.map { active ->
+
       if (active.state != NoteState.PENDING) return@map active
 
       val note = active.note
-      val isCorrectLanePressed = input.pressedFrets.contains(note.lane)
+      val isPressed = input.pressedFrets.contains(note.lane)
 
-      val canHit = if (note.hopo) {
-        isCorrectLanePressed
-      } else {
-        input.strum && isCorrectLanePressed
-      }
-
-      if (canHit) {
+      if (isPressed) {
         val judgement = hitJudge.judge(note, currentTime, hitWindow)
 
         if (judgement != Judgement.MISS) {
-          scoreState = scoreSystem.apply(scoreState, judgement)
-          specialState = specialSystem.onHit(specialState, note, judgement)
+          val base = scoreSystem.apply(scoreState, judgement)
+          val mult = specialSystem.multiplier(specialState)
+
+          scoreState = base.copy(score = base.score * mult)
+          specialState = specialSystem.onHit(specialState, note)
 
           return@map active.copy(
             state = if (note.duration > 0) NoteState.HOLDING else NoteState.HIT,
-            hitTime = currentTime,
-            judgement = judgement
+            hitTime = currentTime
           )
         }
       }
@@ -90,10 +88,9 @@ class GameEngine(
       active
     }
 
-    // =============================
-    // 2. MISS DETECTION
-    // =============================
-    updatedNotes = updatedNotes.map { active ->
+    // MISS
+    notes = notes.map { active ->
+
       if (active.state != NoteState.PENDING) return@map active
 
       val note = active.note
@@ -101,19 +98,15 @@ class GameEngine(
       if (currentTime > note.time + hitWindow.good) {
         scoreState = scoreSystem.apply(scoreState, Judgement.MISS)
 
-        return@map active.copy(
-          state = NoteState.MISSED,
-          judgement = Judgement.MISS
-        )
+        return@map active.copy(state = NoteState.MISSED)
       }
 
       active
     }
 
-    // =============================
-    // 3. SUSTAIN LOGIC (CORRECT BEHAVIOR)
-    // =============================
-    updatedNotes = updatedNotes.map { active ->
+    // SUSTAIN
+    notes = notes.map { active ->
+
       if (active.state != NoteState.HOLDING && active.state != NoteState.HIT) return@map active
 
       val note = active.note
@@ -122,40 +115,34 @@ class GameEngine(
       if (note.duration <= 0) return@map active
 
       val elapsed = currentTime - hitTime
-      val clampedProgress = elapsed.coerceAtMost(note.duration)
+      val progress = elapsed.coerceAtMost(note.duration)
 
-      val wasHolding = active.state == NoteState.HOLDING
-      val isHoldingNow = input.pressedFrets.contains(note.lane)
+      val isHolding = input.pressedFrets.contains(note.lane)
 
-      var newState = active.state
+      var newState: NoteState
       var newProgress = active.sustainProgress
 
-      if (isHoldingNow) {
+      if (isHolding) {
         newState = NoteState.HOLDING
 
-        val delta = (clampedProgress - active.sustainProgress).coerceAtLeast(0.0)
+        val delta = (progress - active.sustainProgress).coerceAtLeast(0.0)
+        val mult = specialSystem.multiplier(specialState)
 
-        if (delta > 0) {
-          val gained = (delta * sustainScorePerSecond).toInt()
-          scoreState = scoreState.copy(score = scoreState.score + gained)
-        }
+        val gained = (delta * sustainScorePerSecond * mult).toInt()
 
-        newProgress = clampedProgress
+        scoreState = scoreState.copy(score = scoreState.score + gained)
+
+        newProgress = progress
       } else {
-        if (wasHolding) {
-          newState = NoteState.HIT
-        }
+        newState = NoteState.HIT
       }
 
-      active.copy(
-        state = newState,
-        sustainProgress = newProgress
-      )
+      active.copy(state = newState, sustainProgress = newProgress)
     }
 
     return state.copy(
       currentTime = currentTime,
-      activeNotes = updatedNotes,
+      activeNotes = notes,
       nextNoteIndex = nextIndex,
       scoreState = scoreState,
       specialState = specialState,

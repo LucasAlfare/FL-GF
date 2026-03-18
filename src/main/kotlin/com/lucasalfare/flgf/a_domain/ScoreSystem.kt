@@ -6,22 +6,42 @@ import com.lucasalfare.flgf.a_domain.state.ScoreState
  * Handles score, combo and multiplier logic.
  */
 class ScoreSystem {
+
   fun apply(state: ScoreState, judgement: Judgement): ScoreState {
-    val base = when (judgement) {
-      Judgement.PERFECT -> 100
-      Judgement.GOOD -> 70
-      Judgement.MISS -> 0
+    return when (judgement) {
+
+      Judgement.MISS -> {
+        state.copy(combo = 0, multiplier = 1)
+      }
+
+      Judgement.GOOD,
+      Judgement.PERFECT -> {
+        val newCombo = state.combo + 1
+        val newMultiplier = calculateMultiplier(newCombo)
+
+        val base = when (judgement) {
+          Judgement.PERFECT -> 100
+          Judgement.GOOD -> 70
+        }
+
+        val gained = base * newMultiplier
+
+        state.copy(
+          score = state.score + gained,
+          combo = newCombo,
+          maxCombo = maxOf(state.maxCombo, newCombo),
+          multiplier = newMultiplier
+        )
+      }
     }
+  }
 
-    val newCombo = if (judgement == Judgement.MISS) 0 else state.combo + 1
-    val newMaxCombo = maxOf(state.maxCombo, newCombo)
-    val newMultiplier = (newCombo / 10).coerceAtMost(4).coerceAtLeast(1)
-
-    return state.copy(
-      score = state.score + base * newMultiplier,
-      combo = newCombo,
-      maxCombo = newMaxCombo,
-      multiplier = newMultiplier
-    )
+  private fun calculateMultiplier(combo: Int): Int {
+    return when {
+      combo >= 30 -> 4
+      combo >= 20 -> 3
+      combo >= 10 -> 2
+      else -> 1
+    }
   }
 }

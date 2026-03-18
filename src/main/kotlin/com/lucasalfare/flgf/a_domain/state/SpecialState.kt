@@ -5,5 +5,5 @@ package com.lucasalfare.flgf.a_domain.state
  */
 data class SpecialState(
   val energy: Double = 0.0,
-  val isActive: Boolean = false
+  val active: Boolean = false
 )
