@@ -178,4 +178,90 @@ class GameEngineTest {
     assertNotNull(missed)
     assertEquals(NoteState.MISSED, missed.state)
   }
+
+  @Test
+  fun `should handle rapid fire notes on same lane`() {
+    val clock = FakeClock(0.0)
+    val engine = createEngine(clock)
+
+    val notes = (0 until 20).map {
+      Note(time = 1.0 + it * 0.05, lane = 3, duration = 0.0, special = false, hopo = false)
+    }
+
+    val song = Song("rapid", "test", 10.0, notes)
+    var state = baseState(song)
+
+    notes.forEach { note ->
+      clock.time = note.time
+      state = engine.tick(state, InputFrame(note.time, setOf(3), strum = true))
+    }
+
+    assertEquals(20, state.scoreState.combo)
+    assertTrue(state.scoreState.score > 0)
+  }
+
+  @Test
+  fun `should break combo on one miss in rapid sequence`() {
+    val clock = FakeClock(0.0)
+    val engine = createEngine(clock)
+
+    val notes = (0 until 10).map {
+      Note(time = 1.0 + it * 0.05, lane = 3, duration = 0.0, special = false, hopo = false)
+    }
+
+    val song = Song("rapid", "test", 10.0, notes)
+    var state = baseState(song)
+
+    notes.forEachIndexed { index, note ->
+      if (index == 5) {
+        // don't play
+        clock.time = note.time
+        state = engine.tick(
+          state,
+          InputFrame(note.time, emptySet(), strum = false)
+        )
+
+        // advances time, simulating "missing the note"
+        clock.time = note.time + 0.2
+        state = engine.tick(
+          state,
+          InputFrame(clock.time, emptySet(), strum = false)
+        )
+
+      } else {
+        clock.time = note.time
+        state = engine.tick(
+          state,
+          InputFrame(note.time, setOf(3), strum = true)
+        )
+      }
+    }
+
+    // in miss, combo is lost
+    assertTrue(state.scoreState.combo < 10)
+
+    // streak/combo should be broke in some point
+    assertTrue(state.scoreState.maxCombo >= 5)
+  }
+
+  @Test
+  fun `should handle very fast notes near hit window limit`() {
+    val clock = FakeClock(0.0)
+    val engine = createEngine(clock)
+
+    // extremely fast notes (basically in the window limit)
+    val notes = (0 until 10).map {
+      Note(time = 1.0 + it * 0.09, lane = 2, duration = 0.0, special = false, hopo = false)
+    }
+
+    val song = Song("tight", "test", 10.0, notes)
+    var state = baseState(song)
+
+    notes.forEach { note ->
+      clock.time = note.time
+      state = engine.tick(state, InputFrame(note.time, setOf(2), strum = true))
+    }
+
+    assertEquals(10, state.scoreState.combo)
+  }
 }
