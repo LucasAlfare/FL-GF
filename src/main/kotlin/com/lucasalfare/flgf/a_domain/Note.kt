@@ -1,4 +1,4 @@
-package com.lucasalfare.kgf.a_domain.entities
+package com.lucasalfare.flgf.a_domain
 
 /**
  * Represents a single musical note in the game timeline.

@@ -1,13 +1,17 @@
 package com.lucasalfare.flgf.b_usecase
 
-import com.lucasalfare.kgf.a_domain.entities.ActiveNote
-import com.lucasalfare.kgf.a_domain.entities.GameState
-import com.lucasalfare.kgf.a_domain.entities.GameStatus
-import com.lucasalfare.kgf.a_domain.entities.HitWindow
-import com.lucasalfare.kgf.a_domain.entities.InputEvent
-import com.lucasalfare.kgf.a_domain.entities.InputType
-import com.lucasalfare.kgf.a_domain.entities.Judgement
-import com.lucasalfare.kgf.a_domain.entities.NoteState
+
+import com.lucasalfare.flgf.a_domain.ActiveNote
+import com.lucasalfare.flgf.a_domain.GameState
+import com.lucasalfare.flgf.a_domain.GameStatus
+import com.lucasalfare.flgf.a_domain.HitWindow
+import com.lucasalfare.flgf.a_domain.InputEvent
+import com.lucasalfare.flgf.a_domain.InputType
+import com.lucasalfare.flgf.a_domain.Judgement
+import com.lucasalfare.flgf.a_domain.NoteState
+import kotlin.collections.filter
+import kotlin.collections.map
+import kotlin.collections.toMutableList
 import kotlin.math.abs
 
 /**

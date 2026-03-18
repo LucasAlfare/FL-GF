@@ -1,4 +1,4 @@
-package com.lucasalfare.kgf.a_domain.entities
+package com.lucasalfare.flgf.a_domain
 
 /**
  * Represents the high-level state of the game session.

@@ -1,4 +1,4 @@
-package com.lucasalfare.kgf.a_domain.entities
+package com.lucasalfare.flgf.a_domain
 
 /**
  * Abstraction for the game's time source.

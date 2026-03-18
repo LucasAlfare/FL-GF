@@ -1,4 +1,4 @@
-package com.lucasalfare.kgf.a_domain.entities
+package com.lucasalfare.flgf.a_domain
 
 /**
  * Represents a player's input action in the game timeline.

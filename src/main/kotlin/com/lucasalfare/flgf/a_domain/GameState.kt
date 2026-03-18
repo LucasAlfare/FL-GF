@@ -1,4 +1,4 @@
-package com.lucasalfare.kgf.a_domain.entities
+package com.lucasalfare.flgf.a_domain
 
 /**
  * Represents the complete state of a gameplay session at a given moment in time.
@@ -33,6 +33,7 @@ data class GameState(
   val song: Song,
   val currentTime: Double = 0.0,
   val activeNotes: List<ActiveNote> = emptyList(),
+  val pressedLanes: Set<Int> = emptySet(),
   val nextNoteIndex: Int = 0,
   val score: Int = 0,
   val combo: Int = 0,
