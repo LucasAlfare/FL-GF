@@ -8,5 +8,6 @@ package com.lucasalfare.flgf.a_domain
 data class InputFrame(
   val time: Double,
   val pressedFrets: Set<Int>,
+  val events: List<InputEvent> = emptyList(),
   val activateSpecial: Boolean = false
 )

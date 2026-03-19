@@ -1,6 +1,8 @@
 import com.lucasalfare.flgf.a_domain.HitJudge
 import com.lucasalfare.flgf.a_domain.HitWindow
+import com.lucasalfare.flgf.a_domain.InputEvent
 import com.lucasalfare.flgf.a_domain.InputFrame
+import com.lucasalfare.flgf.a_domain.InputType
 import com.lucasalfare.flgf.a_domain.Note
 import com.lucasalfare.flgf.a_domain.NoteSpawner
 import com.lucasalfare.flgf.a_domain.ScoreSystem
@@ -32,6 +34,9 @@ class GameEngineTest {
 
   private fun baseState(song: Song) = GameState(song = song)
 
+  private fun press(time: Double, lane: Int) =
+    InputEvent(time, lane, InputType.PRESS)
+
   @Test
   fun `should hit a single note`() {
     val clock = FakeClock(1.0)
@@ -45,7 +50,14 @@ class GameEngineTest {
 
     var state = baseState(song)
 
-    state = engine.tick(state, InputFrame(1.0, setOf(1)))
+    state = engine.tick(
+      state,
+      InputFrame(
+        time = 1.0,
+        pressedFrets = setOf(1),
+        events = listOf(press(1.0, 1))
+      )
+    )
 
     assertEquals(1, state.scoreState.combo)
     assertTrue(state.scoreState.score > 0)
@@ -64,7 +76,14 @@ class GameEngineTest {
 
     var state = baseState(song)
 
-    state = engine.tick(state, InputFrame(2.0, emptySet()))
+    state = engine.tick(
+      state,
+      InputFrame(
+        time = 2.0,
+        pressedFrets = emptySet(),
+        events = emptyList()
+      )
+    )
 
     assertEquals(0, state.scoreState.combo)
   }
@@ -82,10 +101,25 @@ class GameEngineTest {
 
     var state = baseState(song)
 
-    state = engine.tick(state, InputFrame(1.0, setOf(1), true))
+    state = engine.tick(
+      state,
+      InputFrame(
+        time = 1.0,
+        pressedFrets = setOf(1),
+        events = listOf(press(1.0, 1))
+      )
+    )
 
     clock.time = 2.0
-    state = engine.tick(state, InputFrame(2.0, setOf(1), false))
+
+    state = engine.tick(
+      state,
+      InputFrame(
+        time = 2.0,
+        pressedFrets = setOf(1),
+        events = emptyList()
+      )
+    )
 
     val note = state.activeNotes.first()
     assertTrue(note.sustainProgress > 0)
@@ -104,10 +138,25 @@ class GameEngineTest {
 
     var state = baseState(song)
 
-    state = engine.tick(state, InputFrame(1.0, setOf(1), true))
+    state = engine.tick(
+      state,
+      InputFrame(
+        time = 1.0,
+        pressedFrets = setOf(1),
+        events = listOf(press(1.0, 1))
+      )
+    )
 
     clock.time = 1.5
-    state = engine.tick(state, InputFrame(1.5, emptySet(), false))
+
+    state = engine.tick(
+      state,
+      InputFrame(
+        time = 1.5,
+        pressedFrets = emptySet(),
+        events = emptyList()
+      )
+    )
 
     val note = state.activeNotes.first()
     assertEquals(NoteState.HIT, note.state)
@@ -128,7 +177,17 @@ class GameEngineTest {
 
     var state = baseState(song)
 
-    state = engine.tick(state, InputFrame(1.0, setOf(1, 2), true))
+    state = engine.tick(
+      state,
+      InputFrame(
+        time = 1.0,
+        pressedFrets = setOf(1, 2),
+        events = listOf(
+          press(1.0, 1),
+          press(1.0, 2)
+        )
+      )
+    )
 
     assertEquals(2, state.scoreState.combo)
   }
@@ -147,7 +206,14 @@ class GameEngineTest {
 
     var state = baseState(song)
 
-    state = engine.tick(state, InputFrame(1.0, setOf(1), true))
+    state = engine.tick(
+      state,
+      InputFrame(
+        time = 1.0,
+        pressedFrets = setOf(1),
+        events = listOf(press(1.0, 1))
+      )
+    )
 
     assertTrue(state.scoreState.combo < 2)
   }
@@ -166,10 +232,25 @@ class GameEngineTest {
 
     var state = baseState(song)
 
-    state = engine.tick(state, InputFrame(1.0, setOf(1), true))
+    state = engine.tick(
+      state,
+      InputFrame(
+        time = 1.0,
+        pressedFrets = setOf(1),
+        events = listOf(press(1.0, 1))
+      )
+    )
 
     clock.time = 2.0
-    state = engine.tick(state, InputFrame(2.0, setOf(1), false))
+
+    state = engine.tick(
+      state,
+      InputFrame(
+        time = 2.0,
+        pressedFrets = setOf(1),
+        events = emptyList()
+      )
+    )
 
     val notes = state.activeNotes
 
@@ -195,7 +276,15 @@ class GameEngineTest {
 
     notes.forEach { note ->
       clock.time = note.time
-      state = engine.tick(state, InputFrame(note.time, setOf(3)))
+
+      state = engine.tick(
+        state,
+        InputFrame(
+          time = note.time,
+          pressedFrets = setOf(3),
+          events = listOf(press(note.time, 3))
+        )
+      )
     }
 
     assertEquals(20, state.scoreState.combo)
@@ -215,26 +304,42 @@ class GameEngineTest {
     var state = baseState(song)
 
     notes.forEachIndexed { index, note ->
+
+      clock.time = note.time
+
       if (index == 5) {
-        // don't play
-        clock.time = note.time
+
+        // não pressiona → miss
         state = engine.tick(
           state,
-          InputFrame(note.time, emptySet())
+          InputFrame(
+            time = note.time,
+            pressedFrets = emptySet(),
+            events = emptyList()
+          )
         )
 
-        // advances time, simulating "missing the note"
+        // avança tempo pra garantir miss
         clock.time = note.time + 0.2
+
         state = engine.tick(
           state,
-          InputFrame(clock.time, emptySet())
+          InputFrame(
+            time = clock.time,
+            pressedFrets = emptySet(),
+            events = emptyList()
+          )
         )
 
       } else {
-        clock.time = note.time
+
         state = engine.tick(
           state,
-          InputFrame(note.time, setOf(3))
+          InputFrame(
+            time = note.time,
+            pressedFrets = setOf(3),
+            events = listOf(press(note.time, 3))
+          )
         )
       }
     }
@@ -261,7 +366,15 @@ class GameEngineTest {
 
     notes.forEach { note ->
       clock.time = note.time
-      state = engine.tick(state, InputFrame(note.time, setOf(2)))
+
+      state = engine.tick(
+        state,
+        InputFrame(
+          time = note.time,
+          pressedFrets = setOf(2),
+          events = listOf(press(note.time, 2))
+        )
+      )
     }
 
     assertEquals(10, state.scoreState.combo)
@@ -280,7 +393,7 @@ class GameEngineTest {
 
     notes.forEach { note ->
       clock.time = note.time
-      state = engine.tick(state, InputFrame(note.time, setOf(1)))
+      state = engine.tick(state, InputFrame(note.time, setOf(1), events = listOf(press(note.time, 1))))
     }
 
     assertTrue(state.scoreState.multiplier >= 2)
@@ -321,7 +434,7 @@ class GameEngineTest {
     var state = baseState(Song("s", "t", 10.0, listOf(note)))
 
     clock.time = 1.0
-    state = engine.tick(state, InputFrame(1.0, setOf(1)))
+    state = engine.tick(state, InputFrame(1.0, setOf(1), events = listOf(press(note.time, 1))))
 
     assertTrue(state.specialState.energy > 0)
   }
@@ -339,12 +452,15 @@ class GameEngineTest {
 
     notes.forEach { note ->
       clock.time = note.time
-      state = engine.tick(state, InputFrame(note.time, setOf(1)))
+      state = engine.tick(state, InputFrame(note.time, setOf(1), events = listOf(press(note.time, 1))))
     }
 
     // activate
     clock.time += 0.1
-    state = engine.tick(state, InputFrame(clock.time, emptySet(), activateSpecial = true))
+    state = engine.tick(
+      state,
+      InputFrame(clock.time, emptySet(), events = listOf(press(clock.time, 1)), activateSpecial = true)
+    )
 
     assertTrue(state.specialState.active)
   }
@@ -384,7 +500,7 @@ class GameEngineTest {
 
     // normal hit
     clock.time = 1.0
-    state = engine.tick(state, InputFrame(1.0, setOf(1)))
+    state = engine.tick(state, InputFrame(1.0, setOf(1), events = listOf(press(note.time, 1))))
     val normalScore = state.scoreState.score
 
     // reset + activate special
@@ -393,7 +509,7 @@ class GameEngineTest {
     )
 
     clock.time = 1.0
-    state = engine.tick(state, InputFrame(1.0, setOf(1)))
+    state = engine.tick(state, InputFrame(1.0, setOf(1), events = listOf(press(note.time, 1))))
     val boostedScore = state.scoreState.score
 
     assertTrue(boostedScore > normalScore)
@@ -412,13 +528,13 @@ class GameEngineTest {
 
     // hit start
     clock.time = 1.0
-    state = engine.tick(state, InputFrame(1.0, setOf(1)))
+    state = engine.tick(state, InputFrame(1.0, setOf(1), events = listOf(press(note.time, 1))))
 
     val afterHitScore = state.scoreState.score
 
     // hold sustain
     clock.time = 2.0
-    state = engine.tick(state, InputFrame(2.0, setOf(1)))
+    state = engine.tick(state, InputFrame(2.0, setOf(1), events = listOf(press(note.time, 1))))
 
     val afterSustainScore = state.scoreState.score
 
@@ -438,17 +554,17 @@ class GameEngineTest {
 
     // hit start
     clock.time = 1.0
-    state = engine.tick(state, InputFrame(1.0, setOf(1)))
+    state = engine.tick(state, InputFrame(1.0, setOf(1), events = listOf(press(note.time, 1))))
 
     // special should drain and end quickly
     clock.time = 2.0
-    state = engine.tick(state, InputFrame(2.0, setOf(1)))
+    state = engine.tick(state, InputFrame(2.0, setOf(1), events = listOf(press(note.time, 1))))
 
     val scoreDuringSpecial = state.scoreState.score
 
     // now special is likely off
     clock.time = 3.0
-    state = engine.tick(state, InputFrame(3.0, setOf(1)))
+    state = engine.tick(state, InputFrame(3.0, setOf(1), events = listOf(press(note.time, 1))))
 
     val scoreAfterSpecial = state.scoreState.score
 
@@ -470,17 +586,17 @@ class GameEngineTest {
 
     // hit
     clock.time = 1.0
-    state = engine.tick(state, InputFrame(1.0, setOf(1)))
+    state = engine.tick(state, InputFrame(1.0, setOf(1), events = listOf(press(note.time, 1))))
 
     // drain special
     clock.time = 2.0
-    state = engine.tick(state, InputFrame(2.0, setOf(1)))
+    state = engine.tick(state, InputFrame(2.0, setOf(1), events = listOf(press(note.time, 1))))
 
     assertFalse(state.specialState.active)
 
     // continue holding
     clock.time = 3.0
-    state = engine.tick(state, InputFrame(3.0, setOf(1)))
+    state = engine.tick(state, InputFrame(3.0, setOf(1), events = listOf(press(note.time, 1))))
 
     val noteState = state.activeNotes.first()
 

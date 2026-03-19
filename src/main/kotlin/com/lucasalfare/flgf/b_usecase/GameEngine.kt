@@ -5,6 +5,7 @@ import com.lucasalfare.flgf.a_domain.GameStatus
 import com.lucasalfare.flgf.a_domain.HitJudge
 import com.lucasalfare.flgf.a_domain.HitWindow
 import com.lucasalfare.flgf.a_domain.InputFrame
+import com.lucasalfare.flgf.a_domain.InputType
 import com.lucasalfare.flgf.a_domain.Judgement
 import com.lucasalfare.flgf.a_domain.NoteSpawner
 import com.lucasalfare.flgf.a_domain.ScoreSystem
@@ -49,27 +50,42 @@ class GameEngine(
     val currentTime = clock.currentTime()
     val deltaTime = currentTime - state.currentTime
 
+    // SPECIAL
     var specialState = specialSystem.update(state.specialState, deltaTime)
 
     if (input.activateSpecial) {
       specialState = specialSystem.tryActivate(specialState)
     }
 
-    val (spawned, nextIndex) = spawner.spawn(state.copy(currentTime = currentTime))
+    // SPAWN
+    val (spawned, nextIndex) = spawner.spawn(
+      state.copy(currentTime = currentTime)
+    )
 
     var notes = spawned
     var scoreState = state.scoreState
 
-    // HIT
+    // 🔥 INPUT EVENTS (só PRESS)
+    val remainingPresses = input.events
+      .filter { it.type == InputType.PRESS }
+      .toMutableList()
+
+    // =========================
+    // HIT (baseado em EVENTO)
+    // =========================
     notes = notes.map { active ->
 
       if (active.state != NoteState.PENDING) return@map active
 
       val note = active.note
-      val isPressed = input.pressedFrets.contains(note.lane)
 
-      if (isPressed) {
-        val judgement = hitJudge.judge(note, currentTime, hitWindow)
+      // procura um evento dessa lane
+      val pressIndex = remainingPresses.indexOfFirst { it.lane == note.lane }
+
+      if (pressIndex != -1) {
+        val press = remainingPresses.removeAt(pressIndex)
+
+        val judgement = hitJudge.judge(note, press.time, hitWindow)
 
         if (judgement != Judgement.MISS) {
           val base = scoreSystem.apply(scoreState, judgement)
@@ -80,7 +96,7 @@ class GameEngine(
 
           return@map active.copy(
             state = if (note.duration > 0) NoteState.HOLDING else NoteState.HIT,
-            hitTime = currentTime
+            hitTime = press.time
           )
         }
       }
@@ -88,7 +104,9 @@ class GameEngine(
       active
     }
 
-    // MISS
+    // =========================
+    // MISS (continua com currentTime)
+    // =========================
     notes = notes.map { active ->
 
       if (active.state != NoteState.PENDING) return@map active
@@ -97,17 +115,19 @@ class GameEngine(
 
       if (currentTime > note.time + hitWindow.good) {
         scoreState = scoreSystem.apply(scoreState, Judgement.MISS)
-
         return@map active.copy(state = NoteState.MISSED)
       }
 
       active
     }
 
-    // SUSTAIN
+    // =========================
+    // SUSTAIN (estado contínuo)
+    // =========================
     notes = notes.map { active ->
 
-      if (active.state != NoteState.HOLDING && active.state != NoteState.HIT) return@map active
+      if (active.state != NoteState.HOLDING && active.state != NoteState.HIT)
+        return@map active
 
       val note = active.note
       val hitTime = active.hitTime ?: return@map active
@@ -137,7 +157,10 @@ class GameEngine(
         newState = NoteState.HIT
       }
 
-      active.copy(state = newState, sustainProgress = newProgress)
+      active.copy(
+        state = newState,
+        sustainProgress = newProgress
+      )
     }
 
     return state.copy(
