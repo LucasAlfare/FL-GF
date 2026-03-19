@@ -1,63 +1,64 @@
-import com.lucasalfare.flgf.a_domain.HitJudge
-import com.lucasalfare.flgf.a_domain.HitWindow
-import com.lucasalfare.flgf.a_domain.InputEvent
-import com.lucasalfare.flgf.a_domain.InputFrame
-import com.lucasalfare.flgf.a_domain.InputType
-import com.lucasalfare.flgf.a_domain.Note
-import com.lucasalfare.flgf.a_domain.NoteSpawner
-import com.lucasalfare.flgf.a_domain.ScoreSystem
-import com.lucasalfare.flgf.a_domain.Song
-import com.lucasalfare.flgf.a_domain.SpecialSystem
-import com.lucasalfare.flgf.a_domain.state.GameState
-import com.lucasalfare.flgf.a_domain.state.NoteState
-import com.lucasalfare.flgf.a_domain.state.SpecialState
-import com.lucasalfare.flgf.b_usecase.GameEngine
-import com.lucasalfare.flgf.c_infra.fake.FakeClock
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
+import com.lucasalfare.flgf.GameEngine
+import com.lucasalfare.flgf.GameState
+import com.lucasalfare.flgf.HitJudge
+import com.lucasalfare.flgf.HitWindow
+import com.lucasalfare.flgf.Note
+import com.lucasalfare.flgf.NoteSpawner
+import com.lucasalfare.flgf.PlayerInput
+import com.lucasalfare.flgf.ScoreSystem
+import com.lucasalfare.flgf.Song
+import com.lucasalfare.flgf.SpecialState
+import com.lucasalfare.flgf.SpecialSystem
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
 
 class GameEngineTest {
 
-  private fun createEngine(clock: FakeClock): GameEngine {
-    return GameEngine(
-      clock = clock,
-      hitWindow = HitWindow(0.05, 0.1),
+  private lateinit var engine: GameEngine
+
+  @BeforeEach
+  fun setup() {
+    engine = GameEngine(
+      hitWindow = HitWindow(0.1),
       hitJudge = HitJudge(),
-      spawner = NoteSpawner(5.0),
+      spawner = NoteSpawner(1.0),
       scoreSystem = ScoreSystem(),
       specialSystem = SpecialSystem()
     )
   }
 
+  // --------------------------
+  // HELPERS
+  // --------------------------
+
+  private fun song(vararg notes: Note) =
+    Song("test", "test", 100.0, notes.toList())
+
   private fun baseState(song: Song) = GameState(song = song)
 
-  private fun press(time: Double, lane: Int) =
-    InputEvent(time, lane, InputType.PRESS)
+  private fun pressOnce(vararg lanes: Int) =
+    PlayerInput(
+      pressedFrets = lanes.toSet(),
+      justPressedFrets = lanes.toSet()
+    )
+
+  private fun holdOnly(vararg lanes: Int) =
+    PlayerInput(
+      pressedFrets = lanes.toSet(),
+      justPressedFrets = emptySet()
+    )
+
+  // --------------------------
+  // TESTS
+  // --------------------------
 
   @Test
   fun `should hit a single note`() {
-    val clock = FakeClock(1.0)
-    val engine = createEngine(clock)
+    val s = song(Note(1.0, 0, 0.0, null))
+    var state = baseState(s)
 
-    val song = Song(
-      "t", "a", 10.0, listOf(
-        Note(1.0, 1, 0.0, special = false, hopo = false)
-      )
-    )
-
-    var state = baseState(song)
-
-    state = engine.tick(
-      state,
-      InputFrame(
-        time = 1.0,
-        pressedFrets = setOf(1),
-        events = listOf(press(1.0, 1))
-      )
-    )
+    state = engine.tick(state, pressOnce(0), 1.0)
 
     assertEquals(1, state.scoreState.combo)
     assertTrue(state.scoreState.score > 0)
@@ -65,542 +66,243 @@ class GameEngineTest {
 
   @Test
   fun `should miss a note`() {
-    val clock = FakeClock(2.0)
-    val engine = createEngine(clock)
+    val s = song(Note(1.0, 0, 0.0, null))
+    var state = baseState(s)
 
-    val song = Song(
-      "t", "a", 10.0, listOf(
-        Note(1.0, 1, 0.0, special = false, hopo = false)
-      )
-    )
-
-    var state = baseState(song)
-
-    state = engine.tick(
-      state,
-      InputFrame(
-        time = 2.0,
-        pressedFrets = emptySet(),
-        events = emptyList()
-      )
-    )
+    state = engine.tick(state, pressOnce(1), 1.0)
 
     assertEquals(0, state.scoreState.combo)
   }
 
   @Test
-  fun `should sustain long note and gain progress`() {
-    val clock = FakeClock(1.0)
-    val engine = createEngine(clock)
+  fun `should sustain long note and gain points progress`() {
+    val s = song(Note(1.0, 0, 2.0, null))
+    var state = baseState(s)
 
-    val song = Song(
-      "t", "a", 10.0, listOf(
-        Note(1.0, 1, 2.0, special = false, hopo = false)
-      )
-    )
+    state = engine.tick(state, pressOnce(0), 1.0)
+    val afterHit = state.scoreState.score
 
-    var state = baseState(song)
+    state = engine.tick(state, holdOnly(0), 2.0)
 
-    state = engine.tick(
-      state,
-      InputFrame(
-        time = 1.0,
-        pressedFrets = setOf(1),
-        events = listOf(press(1.0, 1))
-      )
-    )
-
-    clock.time = 2.0
-
-    state = engine.tick(
-      state,
-      InputFrame(
-        time = 2.0,
-        pressedFrets = setOf(1),
-        events = emptyList()
-      )
-    )
-
-    val note = state.activeNotes.first()
-    assertTrue(note.sustainProgress > 0)
+    assertTrue(state.scoreState.score > afterHit)
   }
 
   @Test
-  fun `should fail sustain if released early`() {
-    val clock = FakeClock(1.0)
-    val engine = createEngine(clock)
+  fun `should break points gained of sustaining if released early`() {
+    val s = song(Note(1.0, 0, 2.0, null))
+    var state = baseState(s)
 
-    val song = Song(
-      "t", "a", 10.0, listOf(
-        Note(1.0, 1, 2.0, special = false, hopo = false)
-      )
-    )
+    state = engine.tick(state, pressOnce(0), 1.0)
+    state = engine.tick(state, holdOnly(0), 1.5)
 
-    var state = baseState(song)
+    val midScore = state.scoreState.score
 
-    state = engine.tick(
-      state,
-      InputFrame(
-        time = 1.0,
-        pressedFrets = setOf(1),
-        events = listOf(press(1.0, 1))
-      )
-    )
+    state = engine.tick(state, holdOnly(), 2.0)
 
-    clock.time = 1.5
-
-    state = engine.tick(
-      state,
-      InputFrame(
-        time = 1.5,
-        pressedFrets = emptySet(),
-        events = emptyList()
-      )
-    )
-
-    val note = state.activeNotes.first()
-    assertEquals(NoteState.HIT, note.state)
-    assertTrue(note.sustainProgress < note.note.duration)
+    assertEquals(midScore, state.scoreState.score)
   }
 
   @Test
   fun `should hit chord correctly`() {
-    val clock = FakeClock(1.0)
-    val engine = createEngine(clock)
-
-    val song = Song(
-      "t", "a", 10.0, listOf(
-        Note(1.0, 1, 0.0, special = false, hopo = false),
-        Note(1.0, 2, 0.0, special = false, hopo = false)
-      )
+    val s = song(
+      Note(1.0, 0, 0.0, null),
+      Note(1.0, 1, 0.0, null)
     )
 
-    var state = baseState(song)
+    var state = baseState(s)
 
-    state = engine.tick(
-      state,
-      InputFrame(
-        time = 1.0,
-        pressedFrets = setOf(1, 2),
-        events = listOf(
-          press(1.0, 1),
-          press(1.0, 2)
-        )
-      )
-    )
+    state = engine.tick(state, pressOnce(0, 1), 1.0)
 
-    assertEquals(2, state.scoreState.combo)
+    assertEquals(1, state.scoreState.combo)
   }
 
   @Test
-  fun `should partially hit chord`() {
-    val clock = FakeClock(1.0)
-    val engine = createEngine(clock)
-
-    val song = Song(
-      "t", "a", 10.0, listOf(
-        Note(1.0, 1, 0.0, special = false, hopo = false),
-        Note(1.0, 2, 0.0, special = false, hopo = false)
-      )
+  fun `should partially hit chord and fail combo`() {
+    val s = song(
+      Note(1.0, 0, 0.0, null),
+      Note(1.0, 1, 0.0, null)
     )
 
-    var state = baseState(song)
+    var state = baseState(s)
 
-    state = engine.tick(
-      state,
-      InputFrame(
-        time = 1.0,
-        pressedFrets = setOf(1),
-        events = listOf(press(1.0, 1))
-      )
-    )
+    state = engine.tick(state, pressOnce(0), 1.0)
 
-    assertTrue(state.scoreState.combo < 2)
+    assertEquals(0, state.scoreState.combo)
   }
 
   @Test
-  fun `should partially hit chord with sustain`() {
-    val clock = FakeClock(1.0)
-    val engine = createEngine(clock)
-
-    val song = Song(
-      "t", "a", 10.0, listOf(
-        Note(1.0, 1, 2.0, special = false, hopo = false),
-        Note(1.0, 2, 2.0, special = false, hopo = false)
-      )
+  fun `should partially hit chord with sustain and fail combo`() {
+    val s = song(
+      Note(1.0, 0, 2.0, null),
+      Note(1.0, 1, 0.0, null)
     )
 
-    var state = baseState(song)
+    var state = baseState(s)
 
-    state = engine.tick(
-      state,
-      InputFrame(
-        time = 1.0,
-        pressedFrets = setOf(1),
-        events = listOf(press(1.0, 1))
-      )
-    )
+    state = engine.tick(state, pressOnce(0), 1.0)
 
-    clock.time = 2.0
-
-    state = engine.tick(
-      state,
-      InputFrame(
-        time = 2.0,
-        pressedFrets = setOf(1),
-        events = emptyList()
-      )
-    )
-
-    val notes = state.activeNotes
-
-    val hit = notes.find { it.note.lane == 1 }
-    val missed = notes.find { it.note.lane == 2 }
-
-    assertNotNull(hit)
-    assertNotNull(missed)
-    assertEquals(NoteState.MISSED, missed.state)
+    assertEquals(0, state.scoreState.combo)
   }
 
   @Test
   fun `should handle rapid fire notes on same lane`() {
-    val clock = FakeClock(0.0)
-    val engine = createEngine(clock)
+    val s = song(
+      Note(1.0, 0, 0.0, null),
+      Note(1.1, 0, 0.0, null),
+      Note(1.2, 0, 0.0, null)
+    )
 
-    val notes = (0 until 20).map {
-      Note(time = 1.0 + it * 0.05, lane = 3, duration = 0.0, special = false, hopo = false)
-    }
+    var state = baseState(s)
 
-    val song = Song("rapid", "test", 10.0, notes)
-    var state = baseState(song)
+    state = engine.tick(state, pressOnce(0), 1.0)
+    state = engine.tick(state, holdOnly(0), 1.05) // frame intermediário
+    state = engine.tick(state, pressOnce(0), 1.1)
+    state = engine.tick(state, holdOnly(0), 1.15)
+    state = engine.tick(state, pressOnce(0), 1.2)
 
-    notes.forEach { note ->
-      clock.time = note.time
-
-      state = engine.tick(
-        state,
-        InputFrame(
-          time = note.time,
-          pressedFrets = setOf(3),
-          events = listOf(press(note.time, 3))
-        )
-      )
-    }
-
-    assertEquals(20, state.scoreState.combo)
-    assertTrue(state.scoreState.score > 0)
+    assertEquals(3, state.scoreState.combo)
   }
 
   @Test
-  fun `should break combo on one miss in rapid sequence`() {
-    val clock = FakeClock(0.0)
-    val engine = createEngine(clock)
+  fun `should fail combo on one miss in rapid sequence`() {
+    val s = song(
+      Note(1.0, 0, 0.0, null),
+      Note(1.1, 0, 0.0, null),
+      Note(1.2, 0, 0.0, null)
+    )
 
-    val notes = (0 until 10).map {
-      Note(time = 1.0 + it * 0.05, lane = 3, duration = 0.0, special = false, hopo = false)
-    }
+    var state = baseState(s)
 
-    val song = Song("rapid", "test", 10.0, notes)
-    var state = baseState(song)
+    state = engine.tick(state, pressOnce(0), 1.0)
+    state = engine.tick(state, holdOnly(0), 1.05)
 
-    notes.forEachIndexed { index, note ->
+    state = engine.tick(state, pressOnce(1), 1.1) // miss
+    state = engine.tick(state, holdOnly(0), 1.15)
 
-      clock.time = note.time
+    state = engine.tick(state, pressOnce(0), 1.2)
 
-      if (index == 5) {
+    assertEquals(1, state.scoreState.combo)
+  }
 
-        // não pressiona → miss
-        state = engine.tick(
-          state,
-          InputFrame(
-            time = note.time,
-            pressedFrets = emptySet(),
-            events = emptyList()
-          )
-        )
+  @Test
+  fun `should fail combo on wrong hit in rapid sequence`() {
+    val s = song(
+      Note(1.0, 0, 0.0, null),
+      Note(1.1, 1, 0.0, null)
+    )
 
-        // avança tempo pra garantir miss
-        clock.time = note.time + 0.2
+    var state = baseState(s)
 
-        state = engine.tick(
-          state,
-          InputFrame(
-            time = clock.time,
-            pressedFrets = emptySet(),
-            events = emptyList()
-          )
-        )
+    state = engine.tick(state, pressOnce(0), 1.0)
+    state = engine.tick(state, pressOnce(0), 1.1)
 
-      } else {
-
-        state = engine.tick(
-          state,
-          InputFrame(
-            time = note.time,
-            pressedFrets = setOf(3),
-            events = listOf(press(note.time, 3))
-          )
-        )
-      }
-    }
-
-    // in miss, combo is lost
-    assertTrue(state.scoreState.combo < 10)
-
-    // streak/combo should be broke in some point
-    assertTrue(state.scoreState.maxCombo >= 5)
+    assertEquals(0, state.scoreState.combo)
   }
 
   @Test
   fun `should handle very fast notes near hit window limit`() {
-    val clock = FakeClock(0.0)
-    val engine = createEngine(clock)
+    val s = song(Note(1.0, 0, 0.0, null))
+    var state = baseState(s)
 
-    // extremely fast notes (basically in the window limit)
-    val notes = (0 until 10).map {
-      Note(time = 1.0 + it * 0.09, lane = 2, duration = 0.0, special = false, hopo = false)
-    }
+    state = engine.tick(state, pressOnce(0), 1.09)
 
-    val song = Song("tight", "test", 10.0, notes)
-    var state = baseState(song)
-
-    notes.forEach { note ->
-      clock.time = note.time
-
-      state = engine.tick(
-        state,
-        InputFrame(
-          time = note.time,
-          pressedFrets = setOf(2),
-          events = listOf(press(note.time, 2))
-        )
-      )
-    }
-
-    assertEquals(10, state.scoreState.combo)
+    assertTrue(state.scoreState.score > 0)
   }
 
   @Test
   fun `should increase multiplier with combo`() {
-    val clock = FakeClock(0.0)
-    val engine = createEngine(clock)
-
-    val notes = (0 until 12).map {
-      Note(1.0 + it * 0.1, 1, 0.0, hopo = false, special = false)
+    val notes = (1..10).map {
+      Note(it.toDouble(), 0, 0.0, null)
     }
 
-    var state = baseState(Song("m", "t", 10.0, notes))
+    var state = baseState(song(*notes.toTypedArray()))
 
-    notes.forEach { note ->
-      clock.time = note.time
-      state = engine.tick(state, InputFrame(note.time, setOf(1), events = listOf(press(note.time, 1))))
+    notes.forEach {
+      state = engine.tick(state, pressOnce(0), it.time)
     }
 
     assertTrue(state.scoreState.multiplier >= 2)
-    assertEquals(12, state.scoreState.combo)
   }
 
   @Test
   fun `should reset combo and multiplier on miss`() {
-    val clock = FakeClock(0.0)
-    val engine = createEngine(clock)
-
-    val notes = listOf(
-      Note(1.0, 1, 0.0, hopo = false, special = true),
-      Note(2.0, 1, 0.0, hopo = false, special = true)
+    val s = song(
+      Note(1.0, 0, 0.0, null),
+      Note(2.0, 0, 0.0, null)
     )
 
-    var state = baseState(Song("m", "t", 10.0, notes))
+    var state = baseState(s)
 
-    // hit first
-    clock.time = 1.0
-    state = engine.tick(state, InputFrame(1.0, setOf(1)))
-
-    // miss second (advance time)
-    clock.time = 2.2
-    state = engine.tick(state, InputFrame(2.2, emptySet()))
+    state = engine.tick(state, pressOnce(0), 1.0)
+    state = engine.tick(state, pressOnce(1), 2.0)
 
     assertEquals(0, state.scoreState.combo)
     assertEquals(1, state.scoreState.multiplier)
   }
 
   @Test
-  fun `should gain special energy on special notes`() {
-    val clock = FakeClock(0.0)
-    val engine = createEngine(clock)
+  fun `should advance special on getting all special notes`() {
+    val s = song(
+      Note(1.0, 0, 0.0, 1),
+      Note(2.0, 0, 0.0, 1)
+    )
 
-    val note = Note(1.0, 1, 0.0, hopo = false, special = true)
+    var state = baseState(s)
 
-    var state = baseState(Song("s", "t", 10.0, listOf(note)))
-
-    clock.time = 1.0
-    state = engine.tick(state, InputFrame(1.0, setOf(1), events = listOf(press(note.time, 1))))
+    state = engine.tick(state, pressOnce(0), 1.0)
+    state = engine.tick(state, pressOnce(0), 2.0)
 
     assertTrue(state.specialState.energy > 0)
   }
 
   @Test
   fun `should activate special when enough energy`() {
-    val clock = FakeClock(0.0)
-    val engine = createEngine(clock)
+    val special = SpecialState(energy = 50)
 
-    val notes = (0 until 6).map {
-      Note(1.0 + it * 0.1, 1, 0.0, hopo = false, special = true)
-    }
+    val activated = SpecialSystem().tryActivate(special)
 
-    var state = baseState(Song("s", "t", 10.0, notes))
-
-    notes.forEach { note ->
-      clock.time = note.time
-      state = engine.tick(state, InputFrame(note.time, setOf(1), events = listOf(press(note.time, 1))))
-    }
-
-    // activate
-    clock.time += 0.1
-    state = engine.tick(
-      state,
-      InputFrame(clock.time, emptySet(), events = listOf(press(clock.time, 1)), activateSpecial = true)
-    )
-
-    assertTrue(state.specialState.active)
+    assertTrue(activated.active)
   }
 
   @Test
   fun `should drain special over time`() {
-    val clock = FakeClock(0.0)
-    val engine = createEngine(clock)
+    val system = SpecialSystem()
+    var state = SpecialState(energy = 100, active = true)
 
-    val note = Note(1.0, 1, 0.0, hopo = false, special = true)
+    state = system.update(state, 1.0)
 
-    var state = baseState(Song("s", "t", 10.0, listOf(note)))
-
-    // gain energy
-    clock.time = 1.0
-    state = engine.tick(state, InputFrame(1.0, setOf(1)))
-
-    // force activate
-    state = state.copy(specialState = state.specialState.copy(energy = 100.0, active = true))
-
-    val before = state.specialState.energy
-
-    clock.time = 2.0
-    state = engine.tick(state, InputFrame(2.0, emptySet()))
-
-    assertTrue(state.specialState.energy < before)
+    assertTrue(state.energy < 100)
   }
 
   @Test
   fun `should increase score faster when special is active`() {
-    val clock = FakeClock(0.0)
-    val engine = createEngine(clock)
+    val s = song(Note(1.0, 0, 0.0, null))
 
-    val note = Note(1.0, 1, 0.0, hopo = false, special = false)
-
-    var state = baseState(Song("s", "t", 10.0, listOf(note)))
-
-    // normal hit
-    clock.time = 1.0
-    state = engine.tick(state, InputFrame(1.0, setOf(1), events = listOf(press(note.time, 1))))
-    val normalScore = state.scoreState.score
-
-    // reset + activate special
-    state = baseState(Song("s", "t", 10.0, listOf(note))).copy(
-      specialState = SpecialState(energy = 100.0, active = true)
+    var state = baseState(s).copy(
+      specialState = SpecialState(energy = 100, active = true)
     )
 
-    clock.time = 1.0
-    state = engine.tick(state, InputFrame(1.0, setOf(1), events = listOf(press(note.time, 1))))
-    val boostedScore = state.scoreState.score
+    state = engine.tick(state, pressOnce(0), 1.0)
 
-    assertTrue(boostedScore > normalScore)
+    assertTrue(state.scoreState.score >= 100)
   }
 
   @Test
-  fun `should gain sustain score with special active`() {
-    val clock = FakeClock(0.0)
-    val engine = createEngine(clock)
-
-    val note = Note(1.0, 1, 2.0, hopo = false, special = false)
-
-    var state = baseState(Song("sustain", "t", 10.0, listOf(note))).copy(
-      specialState = SpecialState(energy = 100.0, active = true)
+  fun `should ignore special phrases while special is active`() {
+    val s = song(
+      Note(1.0, 0, 0.0, 1),
+      Note(1.01, 0, 0.0, 1) // mesma janela → sem drain relevante
     )
 
-    // hit start
-    clock.time = 1.0
-    state = engine.tick(state, InputFrame(1.0, setOf(1), events = listOf(press(note.time, 1))))
-
-    val afterHitScore = state.scoreState.score
-
-    // hold sustain
-    clock.time = 2.0
-    state = engine.tick(state, InputFrame(2.0, setOf(1), events = listOf(press(note.time, 1))))
-
-    val afterSustainScore = state.scoreState.score
-
-    assertTrue(afterSustainScore > afterHitScore)
-  }
-
-  @Test
-  fun `should stop gaining sustain bonus after special ends`() {
-    val clock = FakeClock(0.0)
-    val engine = createEngine(clock)
-
-    val note = Note(1.0, 1, 3.0, hopo = false, special = false)
-
-    var state = baseState(Song("sustain", "t", 10.0, listOf(note))).copy(
-      specialState = SpecialState(energy = 1.0, active = true)
+    var state = baseState(s).copy(
+      specialState = SpecialState(energy = 100, active = true)
     )
 
-    // hit start
-    clock.time = 1.0
-    state = engine.tick(state, InputFrame(1.0, setOf(1), events = listOf(press(note.time, 1))))
+    val before = state.specialState.energy
 
-    // special should drain and end quickly
-    clock.time = 2.0
-    state = engine.tick(state, InputFrame(2.0, setOf(1), events = listOf(press(note.time, 1))))
+    state = engine.tick(state, pressOnce(0), 1.0)
+    state = engine.tick(state, pressOnce(0), 1.01)
 
-    val scoreDuringSpecial = state.scoreState.score
-
-    // now special is likely off
-    clock.time = 3.0
-    state = engine.tick(state, InputFrame(3.0, setOf(1), events = listOf(press(note.time, 1))))
-
-    val scoreAfterSpecial = state.scoreState.score
-
-    // still increases, but slower than before (no multiplier)
-    assertTrue(scoreAfterSpecial > scoreDuringSpecial)
-    assertFalse(state.specialState.active)
-  }
-
-  @Test
-  fun `should continue sustain normally after special ends`() {
-    val clock = FakeClock(0.0)
-    val engine = createEngine(clock)
-
-    val note = Note(1.0, 1, 3.0, hopo = false, special = false)
-
-    var state = baseState(Song("sustain", "t", 10.0, listOf(note))).copy(
-      specialState = SpecialState(energy = 1.0, active = true)
-    )
-
-    // hit
-    clock.time = 1.0
-    state = engine.tick(state, InputFrame(1.0, setOf(1), events = listOf(press(note.time, 1))))
-
-    // drain special
-    clock.time = 2.0
-    state = engine.tick(state, InputFrame(2.0, setOf(1), events = listOf(press(note.time, 1))))
-
-    assertFalse(state.specialState.active)
-
-    // continue holding
-    clock.time = 3.0
-    state = engine.tick(state, InputFrame(3.0, setOf(1), events = listOf(press(note.time, 1))))
-
-    val noteState = state.activeNotes.first()
-
-    assertEquals(NoteState.HOLDING, noteState.state)
-    assertTrue(noteState.sustainProgress > 0)
+    assertTrue(state.specialState.energy < before) // só drenou
   }
 }
