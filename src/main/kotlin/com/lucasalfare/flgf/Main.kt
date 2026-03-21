@@ -223,6 +223,10 @@ class GameEngine(
     // 5. WRONG INPUT PENALTY
     score = applyWrongInputPenalty(notes, input, currentTime, score, hitResult.anyHit)
 
+    val sustainPenalty = applySustainBreakPenalty(notes, input, currentTime, score)
+    notes = sustainPenalty.first
+    score = sustainPenalty.second
+
     // 6. SUSTAIN
     val sustainResult = processSustain(notes, input, currentTime, score, special)
     notes = sustainResult.notes
@@ -429,6 +433,43 @@ class GameEngine(
     }.toMutableList()
 
     return StepResult(updated, newScore, special)
+  }
+
+  private fun applySustainBreakPenalty(
+    notes: MutableList<ActiveNote>,
+    input: PlayerInput,
+    time: Double,
+    score: ScoreState
+  ): Pair<MutableList<ActiveNote>, ScoreState> {
+
+    if (input.justPressedFrets.isEmpty()) return notes to score
+
+    var newScore = score
+    val updated = notes.map { note ->
+
+      if (note.state != NoteState.HOLDING) return@map note
+
+      val sustainLane = note.note.lane
+
+      // se apertou QUALQUER outra tecla além da do sustain → erro
+      val wrongPress = input.justPressedFrets.any { it != sustainLane }
+
+      if (wrongPress) {
+        newScore = ScoreState(
+          score = newScore.score,
+          combo = 0,
+          maxCombo = newScore.maxCombo,
+          multiplier = 1
+        )
+
+        // mata o sustain (não pode mais pontuar)
+        return@map note.copy(state = NoteState.MISSED)
+      }
+
+      note
+    }.toMutableList()
+
+    return updated to newScore
   }
 
   private fun cleanup(notes: MutableList<ActiveNote>, time: Double): MutableList<ActiveNote> {
