@@ -280,25 +280,47 @@ class GameEngine(
 
         val expected = group.map { it.note.lane }.toSet()
         val pressed = input.justPressedFrets
-        val correct = expected.intersect(pressed)
 
-        if (correct.isNotEmpty()) {
+        val isExactMatch = pressed == expected
+        val hasAnyCorrect = expected.intersect(pressed).isNotEmpty()
+
+        if (isExactMatch) {
           anyHit = true
 
-          val isFullChord = correct.size == expected.size
           val specialMult = specialSystem.multiplier(newSpecial)
 
           newScore = scoreSystem.apply(
             newScore,
-            if (isFullChord) Judgement.HIT else Judgement.MISS,
-            if (isFullChord) specialMult else 1
+            Judgement.HIT,
+            specialMult
           )
 
           group.forEach { active ->
             val idx = notes.indexOf(active)
 
-            if (active.note.lane in correct) {
+            val newState =
+              if (active.note.duration > 0) NoteState.HOLDING
+              else NoteState.HIT
 
+            notes[idx] = active.copy(
+              state = newState,
+              hitTime = time,
+              sustainMultiplierSnapshot = newScore.multiplier
+            )
+
+            newSpecial = specialSystem.onNoteHit(newSpecial, active.note, allNotes)
+          }
+
+        } else if (hasAnyCorrect) {
+          // partial hit → quebra combo
+          anyHit = true
+
+          newScore = scoreSystem.apply(newScore, Judgement.MISS, 1)
+
+          group.forEach { active ->
+            val idx = notes.indexOf(active)
+
+            if (active.note.lane in pressed) {
               val newState =
                 if (active.note.duration > 0) NoteState.HOLDING
                 else NoteState.HIT
@@ -312,12 +334,13 @@ class GameEngine(
               newSpecial = specialSystem.onNoteHit(newSpecial, active.note, allNotes)
 
             } else {
-
               notes[idx] = active.copy(state = NoteState.MISSED)
               newSpecial = specialSystem.onNoteMiss(newSpecial, active.note)
             }
           }
+
         }
+        // caso completamente errado → deixa pro wrong input penalty
       }
     }
 
