@@ -1,3 +1,7 @@
+package com.lucasalfare.flgf
+
+import kotlin.math.abs
+
 /*
 should hit a single note
 should miss a note
@@ -21,10 +25,6 @@ should stop gaining sustain bonus after special ends
 should continue sustain normally after special ends
 should ignore special phrases while special is active
  */
-
-package com.lucasalfare.flgf
-
-import kotlin.math.abs
 
 data class PlayerInput(
   val pressedFrets: Set<Int>,
@@ -144,7 +144,11 @@ class SpecialSystem {
 
   fun onNoteMiss(state: SpecialState, note: Note): SpecialState {
     val id = note.specialPhraseId ?: return state
-    return if (state.currentPhraseId == id) state.copy(currentPhraseId = null, phraseHitCount = 0, phraseTotal = 0) else state
+    return if (state.currentPhraseId == id) state.copy(
+      currentPhraseId = null,
+      phraseHitCount = 0,
+      phraseTotal = 0
+    ) else state
   }
 
   fun tryActivate(state: SpecialState) = if (state.energy >= 50) state.copy(active = true) else state
@@ -187,90 +191,45 @@ class GameEngine(
 
   fun tick(state: GameState, input: PlayerInput, currentTime: Double): GameState {
     if (state.status != GameStatus.PLAYING) return state
+
     val dt = currentTime - state.currentTime
 
-    var special = specialSystem.update(state.specialState, dt)
-    if (input.activateSpecial) special = specialSystem.tryActivate(special)
+    // 1. TIME + SPECIAL
+    var special = updateSpecial(state.specialState, input, dt)
 
-    val (spawned, nextIndex) = spawner.spawn(state.song.notes, currentTime, state.nextNoteIndex, state.activeNotes)
+    // 2. SPAWN
+    val (spawned, nextIndex) = spawner.spawn(
+      state.song.notes,
+      currentTime,
+      state.nextNoteIndex,
+      state.activeNotes
+    )
+
     var notes = spawned.toMutableList()
     var score = state.scoreState
-    val specialMult = specialSystem.multiplier(special)
 
-    val pending = notes.filter { it.state == NoteState.PENDING }
-    val groups = pending.groupBy { it.note.time }
+    // 3. HIT RESOLUTION
+    val hitResult = resolveHits(notes, input, currentTime, score, special, state.song.notes)
+    notes = hitResult.notes
+    score = hitResult.score
+    special = hitResult.special
 
-    var anyHit = false
-    val targetGroup = groups.minByOrNull { (_, group) -> group.minOf { abs(currentTime - it.note.time) } }
+    // 4. MISS RESOLUTION
+    val missResult = resolveMisses(notes, currentTime, score, special)
+    notes = missResult.notes
+    score = missResult.score
+    special = missResult.special
 
-    targetGroup?.let { (_, group) ->
-      val within = group.any { hitJudge.judge(it.note, currentTime, hitWindow) == Judgement.HIT }
-      if (within && input.justPressedFrets.isNotEmpty()) {
-        val expected = group.map { it.note.lane }.toSet()
-        val pressed = input.justPressedFrets
-        val correct = expected.intersect(pressed)
-        if (correct.isNotEmpty()) {
-          anyHit = true
-          val isFullChord = correct.size == expected.size
-          score = scoreSystem.apply(score, if (isFullChord) Judgement.HIT else Judgement.MISS, if (isFullChord) specialMult else 1)
-          group.forEach { active ->
-            val idx = notes.indexOf(active)
-            if (active.note.lane in correct) {
-              val snapshotMult = score.multiplier
-              val newState = if (active.note.duration > 0) NoteState.HOLDING else NoteState.HIT
-              notes[idx] = active.copy(state = newState, hitTime = currentTime, sustainMultiplierSnapshot = snapshotMult)
-              special = specialSystem.onNoteHit(special, active.note, state.song.notes)
-            } else {
-              notes[idx] = active.copy(state = NoteState.MISSED)
-              special = specialSystem.onNoteMiss(special, active.note)
-            }
-          }
-        }
-      }
-    }
+    // 5. WRONG INPUT PENALTY
+    score = applyWrongInputPenalty(notes, input, currentTime, score, hitResult.anyHit)
 
-    notes = notes.map {
-      if (it.state != NoteState.PENDING) return@map it
-      if (hitJudge.judge(it.note, currentTime, hitWindow) == Judgement.MISS && currentTime > it.note.time) {
-        score = scoreSystem.apply(score, Judgement.MISS, 1)
-        special = specialSystem.onNoteMiss(special, it.note)
-        it.copy(state = NoteState.MISSED)
-      } else it
-    }.toMutableList()
+    // 6. SUSTAIN
+    val sustainResult = processSustain(notes, input, currentTime, score, special)
+    notes = sustainResult.notes
+    score = sustainResult.score
 
-    val hasPending = pending.any { hitJudge.judge(it.note, currentTime, hitWindow) == Judgement.HIT }
-    if (input.justPressedFrets.isNotEmpty() && !anyHit && hasPending) {
-      score = scoreSystem.apply(score, Judgement.MISS, 1)
-    }
-
-    notes = notes.map {
-      if (it.state != NoteState.HOLDING && it.state != NoteState.HIT) return@map it
-      val note = it.note
-      val hitTime = it.hitTime ?: return@map it
-      if (note.duration <= 0) return@map it
-
-      val elapsed = currentTime - hitTime
-      val progress = elapsed.coerceAtMost(note.duration)
-      val holding = note.lane in input.pressedFrets
-
-      var newState = it.state
-      var newProgress = it.sustainProgress
-
-      if (holding) {
-        newState = NoteState.HOLDING
-        val delta = (progress - it.sustainProgress).coerceAtLeast(0.0)
-        val gained = (delta * sustainScorePerSecond * it.sustainMultiplierSnapshot * specialMult).toInt()
-        score = score.copy(score = score.score + gained)
-        newProgress = progress
-        if (progress >= note.duration) newState = NoteState.DONE
-      } else {
-        newState = NoteState.HIT
-      }
-
-      it.copy(state = newState, sustainProgress = newProgress)
-    }.toMutableList()
-
-    notes = notes.filter { !(it.state == NoteState.MISSED && currentTime > it.note.time + 1.0) && it.state != NoteState.DONE }.toMutableList()
+    // 7. CLEANUP
+    notes = cleanup(notes, currentTime)
 
     return state.copy(
       currentTime = currentTime,
@@ -280,4 +239,172 @@ class GameEngine(
       specialState = special
     )
   }
+
+  private fun updateSpecial(state: SpecialState, input: PlayerInput, dt: Double): SpecialState {
+    var result = specialSystem.update(state, dt)
+    if (input.activateSpecial) result = specialSystem.tryActivate(result)
+    return result
+  }
+
+  private fun resolveHits(
+    notes: MutableList<ActiveNote>,
+    input: PlayerInput,
+    time: Double,
+    score: ScoreState,
+    special: SpecialState,
+    allNotes: List<Note>
+  ): StepResult {
+
+    var newScore = score
+    var newSpecial = special
+    var anyHit = false
+
+    val pending = notes.filter { it.state == NoteState.PENDING }
+    val groups = pending.groupBy { it.note.time }
+
+    val target = groups.minByOrNull { (_, g) ->
+      g.minOf { abs(time - it.note.time) }
+    }
+
+    target?.let { (_, group) ->
+      val within = group.any { hitJudge.judge(it.note, time, hitWindow) == Judgement.HIT }
+
+      if (within && input.justPressedFrets.isNotEmpty()) {
+        val expected = group.map { it.note.lane }.toSet()
+        val pressed = input.justPressedFrets
+        val correct = expected.intersect(pressed)
+
+        if (correct.isNotEmpty()) {
+          anyHit = true
+
+          val isFull = correct.size == expected.size
+
+          val specialMult = specialSystem.multiplier(newSpecial)
+          newScore = scoreSystem.apply(
+            newScore,
+            if (isFull) Judgement.HIT else Judgement.MISS,
+            if (isFull) specialMult else 1
+          )
+
+          group.forEach { active ->
+            val idx = notes.indexOf(active)
+            if (active.note.lane in correct) {
+              val newState = if (active.note.duration > 0) NoteState.HOLDING else NoteState.HIT
+
+              notes[idx] = active.copy(
+                state = newState,
+                hitTime = time,
+                sustainMultiplierSnapshot = newScore.multiplier
+              )
+
+              newSpecial = specialSystem.onNoteHit(newSpecial, active.note, allNotes)
+            } else {
+              notes[idx] = active.copy(state = NoteState.MISSED)
+              newSpecial = specialSystem.onNoteMiss(newSpecial, active.note)
+            }
+          }
+        }
+      }
+    }
+
+    return StepResult(notes, newScore, newSpecial, anyHit)
+  }
+
+  private fun resolveMisses(
+    notes: MutableList<ActiveNote>,
+    time: Double,
+    score: ScoreState,
+    special: SpecialState
+  ): StepResult {
+
+    var newScore = score
+    var newSpecial = special
+
+    val updated = notes.map {
+      if (it.state != NoteState.PENDING) return@map it
+
+      if (hitJudge.judge(it.note, time, hitWindow) == Judgement.MISS && time > it.note.time) {
+        newScore = scoreSystem.apply(newScore, Judgement.MISS, 1)
+        newSpecial = specialSystem.onNoteMiss(newSpecial, it.note)
+        it.copy(state = NoteState.MISSED)
+      } else it
+    }.toMutableList()
+
+    return StepResult(updated, newScore, newSpecial)
+  }
+
+  private fun applyWrongInputPenalty(
+    notes: List<ActiveNote>,
+    input: PlayerInput,
+    time: Double,
+    score: ScoreState,
+    anyHit: Boolean
+  ): ScoreState {
+
+    val hasPending = notes.any {
+      it.state == NoteState.PENDING &&
+          hitJudge.judge(it.note, time, hitWindow) == Judgement.HIT
+    }
+
+    return if (input.justPressedFrets.isNotEmpty() && !anyHit && hasPending) {
+      scoreSystem.apply(score, Judgement.MISS, 1)
+    } else score
+  }
+
+  private fun processSustain(
+    notes: MutableList<ActiveNote>,
+    input: PlayerInput,
+    time: Double,
+    score: ScoreState,
+    special: SpecialState
+  ): StepResult {
+
+    var newScore = score
+    val specialMult = specialSystem.multiplier(special)
+
+    val updated = notes.map {
+      if (it.state != NoteState.HOLDING && it.state != NoteState.HIT) return@map it
+
+      val note = it.note
+      val hitTime = it.hitTime ?: return@map it
+      if (note.duration <= 0) return@map it
+
+      val elapsed = time - hitTime
+      val progress = elapsed.coerceAtMost(note.duration)
+      val holding = note.lane in input.pressedFrets
+
+      var newState = it.state
+      var newProgress = it.sustainProgress
+
+      if (holding) {
+        val delta = (progress - it.sustainProgress).coerceAtLeast(0.0)
+        val gained = (delta * sustainScorePerSecond * it.sustainMultiplierSnapshot * specialMult).toInt()
+
+        newScore = newScore.copy(score = newScore.score + gained)
+        newProgress = progress
+
+        if (progress >= note.duration) newState = NoteState.DONE
+      } else {
+        newState = NoteState.HIT
+      }
+
+      it.copy(state = newState, sustainProgress = newProgress)
+    }.toMutableList()
+
+    return StepResult(updated, newScore, special)
+  }
+
+  private fun cleanup(notes: MutableList<ActiveNote>, time: Double): MutableList<ActiveNote> {
+    return notes.filter {
+      !(it.state == NoteState.MISSED && time > it.note.time + 1.0) &&
+          it.state != NoteState.DONE
+    }.toMutableList()
+  }
+
+  private data class StepResult(
+    val notes: MutableList<ActiveNote>,
+    val score: ScoreState,
+    val special: SpecialState,
+    val anyHit: Boolean = false
+  )
 }
