@@ -96,18 +96,22 @@ class ScoreSystem {
   private val baseScore = 50
 
   fun apply(state: ScoreState, judgement: Judgement, specialMultiplier: Int): ScoreState = when (judgement) {
-    Judgement.MISS -> state.copy(combo = 0, multiplier = 1)
-    Judgement.HIT -> {
-      val combo = state.combo + 1
-      val mult = calculateMultiplier(combo)
-      val gained = baseScore * mult * specialMultiplier
-      state.copy(
-        score = state.score + gained,
-        combo = combo,
-        maxCombo = maxOf(state.maxCombo, combo),
-        multiplier = mult
-      )
-    }
+    Judgement.MISS -> resetCombo(state)
+    Judgement.HIT -> addHit(state, specialMultiplier)
+  }
+
+  fun resetCombo(state: ScoreState): ScoreState = state.copy(combo = 0, multiplier = 1)
+
+  fun addHit(state: ScoreState, specialMultiplier: Int): ScoreState {
+    val combo = state.combo + 1
+    val mult = calculateMultiplier(combo)
+    val gained = baseScore * mult * specialMultiplier
+    return state.copy(
+      score = state.score + gained,
+      combo = combo,
+      maxCombo = maxOf(state.maxCombo, combo),
+      multiplier = mult
+    )
   }
 
   private fun calculateMultiplier(combo: Int) = when {
@@ -180,84 +184,20 @@ class NoteSpawner(private val window: Double) {
   }
 }
 
-class GameEngine(
-  private val hitWindow: HitWindow,
+private class HitResolver(
   private val hitJudge: HitJudge,
-  private val spawner: NoteSpawner,
+  private val hitWindow: HitWindow,
   private val scoreSystem: ScoreSystem,
   private val specialSystem: SpecialSystem
 ) {
-  private val sustainScorePerSecond = 50.0
-
-  fun tick(state: GameState, input: PlayerInput, currentTime: Double): GameState {
-    if (state.status != GameStatus.PLAYING) return state
-
-    val dt = currentTime - state.currentTime
-
-    // 1. TIME + SPECIAL
-    var special = updateSpecial(state.specialState, input, dt)
-
-    // 2. SPAWN
-    val (spawned, nextIndex) = spawner.spawn(
-      state.song.notes,
-      currentTime,
-      state.nextNoteIndex,
-      state.activeNotes
-    )
-
-    var notes = spawned.toMutableList()
-    var score = state.scoreState
-
-    // 3. HIT RESOLUTION
-    val hitResult = resolveHits(notes, input, currentTime, score, special, state.song.notes)
-    notes = hitResult.notes
-    score = hitResult.score
-    special = hitResult.special
-
-    // 4. MISS RESOLUTION
-    val missResult = resolveMisses(notes, currentTime, score, special)
-    notes = missResult.notes
-    score = missResult.score
-    special = missResult.special
-
-    // 5. WRONG INPUT PENALTY
-    score = applyWrongInputPenalty(notes, input, currentTime, score, hitResult.anyHit)
-
-    val sustainPenalty = applySustainBreakPenalty(notes, input, currentTime, score)
-    notes = sustainPenalty.first
-    score = sustainPenalty.second
-
-    // 6. SUSTAIN
-    val sustainResult = processSustain(notes, input, currentTime, score, special)
-    notes = sustainResult.notes
-    score = sustainResult.score
-
-    // 7. CLEANUP
-    notes = cleanup(notes, currentTime)
-
-    return state.copy(
-      currentTime = currentTime,
-      activeNotes = notes,
-      nextNoteIndex = nextIndex,
-      scoreState = score,
-      specialState = special
-    )
-  }
-
-  private fun updateSpecial(state: SpecialState, input: PlayerInput, dt: Double): SpecialState {
-    var result = specialSystem.update(state, dt)
-    if (input.activateSpecial) result = specialSystem.tryActivate(result)
-    return result
-  }
-
-  private fun resolveHits(
+  fun resolve(
     notes: MutableList<ActiveNote>,
     input: PlayerInput,
     time: Double,
     score: ScoreState,
     special: SpecialState,
     allNotes: List<Note>
-  ): StepResult {
+  ): Result {
 
     var newScore = score
     var newSpecial = special
@@ -267,21 +207,11 @@ class GameEngine(
     val groups = pending.groupBy { it.note.time }
 
     val target = groups.values
-      .filter { group ->
-        group.any { hitJudge.judge(it.note, time, hitWindow) == Judgement.HIT }
-      }
-      .minWithOrNull(
-        compareBy<List<ActiveNote>> { group ->
-          group.minOf { kotlin.math.abs(time - it.note.time) }
-        }.thenByDescending { group ->
-          group.minOf { it.note.time } <= time
-        }
-      )
+      .filter { group -> group.any { hitJudge.judge(it.note, time, hitWindow) == Judgement.HIT } }
+      .minByOrNull { group -> group.minOf { kotlin.math.abs(time - it.note.time) } }
 
     target?.let { group ->
-
       if (input.justPressedFrets.isNotEmpty()) {
-
         val expected = group.map { it.note.lane }.toSet()
         val pressed = input.justPressedFrets
 
@@ -290,73 +220,58 @@ class GameEngine(
 
         if (isExactMatch) {
           anyHit = true
-
           val specialMult = specialSystem.multiplier(newSpecial)
-
-          newScore = scoreSystem.apply(
-            newScore,
-            Judgement.HIT,
-            specialMult
-          )
+          newScore = scoreSystem.apply(newScore, Judgement.HIT, specialMult)
 
           group.forEach { active ->
             val idx = notes.indexOf(active)
-
-            val newState =
-              if (active.note.duration > 0) NoteState.HOLDING
-              else NoteState.HIT
-
-            notes[idx] = active.copy(
-              state = newState,
-              hitTime = time,
-              sustainMultiplierSnapshot = newScore.multiplier
-            )
-
+            val newState = if (active.note.duration > 0) NoteState.HOLDING else NoteState.HIT
+            notes[idx] = active.copy(state = newState, hitTime = time, sustainMultiplierSnapshot = newScore.multiplier)
             newSpecial = specialSystem.onNoteHit(newSpecial, active.note, allNotes)
           }
-
         } else if (hasAnyCorrect) {
-          // partial hit → quebra combo
           anyHit = true
-
-          newScore = scoreSystem.apply(newScore, Judgement.MISS, 1)
+          newScore = scoreSystem.resetCombo(newScore)
 
           group.forEach { active ->
             val idx = notes.indexOf(active)
-
             if (active.note.lane in pressed) {
-              val newState =
-                if (active.note.duration > 0) NoteState.HOLDING
-                else NoteState.HIT
-
-              notes[idx] = active.copy(
-                state = newState,
-                hitTime = time,
-                sustainMultiplierSnapshot = newScore.multiplier
-              )
-
+              val newState = if (active.note.duration > 0) NoteState.HOLDING else NoteState.HIT
+              notes[idx] =
+                active.copy(state = newState, hitTime = time, sustainMultiplierSnapshot = newScore.multiplier)
               newSpecial = specialSystem.onNoteHit(newSpecial, active.note, allNotes)
-
             } else {
               notes[idx] = active.copy(state = NoteState.MISSED)
               newSpecial = specialSystem.onNoteMiss(newSpecial, active.note)
             }
           }
-
         }
-        // caso completamente errado → deixa pro wrong input penalty
       }
     }
 
-    return StepResult(notes, newScore, newSpecial, anyHit)
+    return Result(notes, newScore, newSpecial, anyHit)
   }
 
-  private fun resolveMisses(
+  data class Result(
+    val notes: MutableList<ActiveNote>,
+    val score: ScoreState,
+    val special: SpecialState,
+    val anyHit: Boolean
+  )
+}
+
+private class MissResolver(
+  private val hitJudge: HitJudge,
+  private val hitWindow: HitWindow,
+  private val scoreSystem: ScoreSystem,
+  private val specialSystem: SpecialSystem
+) {
+  fun resolve(
     notes: MutableList<ActiveNote>,
     time: Double,
     score: ScoreState,
     special: SpecialState
-  ): StepResult {
+  ): HitResolver.Result {
 
     var newScore = score
     var newSpecial = special
@@ -371,34 +286,22 @@ class GameEngine(
       } else it
     }.toMutableList()
 
-    return StepResult(updated, newScore, newSpecial)
+    return HitResolver.Result(updated, newScore, newSpecial, false)
   }
+}
 
-  private fun applyWrongInputPenalty(
-    notes: List<ActiveNote>,
-    input: PlayerInput,
-    time: Double,
-    score: ScoreState,
-    anyHit: Boolean
-  ): ScoreState {
+private class SustainProcessor(
+  private val specialSystem: SpecialSystem
+) {
+  private val sustainScorePerSecond = 50.0
 
-    val hasPending = notes.any {
-      it.state == NoteState.PENDING &&
-          hitJudge.judge(it.note, time, hitWindow) == Judgement.HIT
-    }
-
-    return if (input.justPressedFrets.isNotEmpty() && !anyHit && hasPending) {
-      scoreSystem.apply(score, Judgement.MISS, 1)
-    } else score
-  }
-
-  private fun processSustain(
+  fun process(
     notes: MutableList<ActiveNote>,
     input: PlayerInput,
     time: Double,
     score: ScoreState,
     special: SpecialState
-  ): StepResult {
+  ): HitResolver.Result {
 
     var newScore = score
     val specialMult = specialSystem.multiplier(special)
@@ -420,10 +323,8 @@ class GameEngine(
       if (holding) {
         val delta = (progress - it.sustainProgress).coerceAtLeast(0.0)
         val gained = (delta * sustainScorePerSecond * it.sustainMultiplierSnapshot * specialMult).toInt()
-
         newScore = newScore.copy(score = newScore.score + gained)
         newProgress = progress
-
         if (progress >= note.duration) newState = NoteState.DONE
       } else {
         newState = NoteState.HIT
@@ -432,44 +333,87 @@ class GameEngine(
       it.copy(state = newState, sustainProgress = newProgress)
     }.toMutableList()
 
-    return StepResult(updated, newScore, special)
+    return HitResolver.Result(updated, newScore, special, false)
+  }
+}
+
+class GameEngine(
+  private val hitWindow: HitWindow,
+  private val hitJudge: HitJudge,
+  private val spawner: NoteSpawner,
+  private val scoreSystem: ScoreSystem,
+  private val specialSystem: SpecialSystem
+) {
+  private val hitResolver = HitResolver(hitJudge, hitWindow, scoreSystem, specialSystem)
+  private val missResolver = MissResolver(hitJudge, hitWindow, scoreSystem, specialSystem)
+  private val sustainProcessor = SustainProcessor(specialSystem)
+
+  fun tick(state: GameState, input: PlayerInput, currentTime: Double): GameState {
+    if (state.status != GameStatus.PLAYING) return state
+
+    val dt = currentTime - state.currentTime
+
+    var special = updateSpecial(state.specialState, input, dt)
+
+    val (spawned, nextIndex) = spawner.spawn(
+      state.song.notes,
+      currentTime,
+      state.nextNoteIndex,
+      state.activeNotes
+    )
+
+    var notes = spawned.toMutableList()
+    var score = state.scoreState
+
+    val hit = hitResolver.resolve(notes, input, currentTime, score, special, state.song.notes)
+    notes = hit.notes
+    score = hit.score
+    special = hit.special
+
+    val miss = missResolver.resolve(notes, currentTime, score, special)
+    notes = miss.notes
+    score = miss.score
+    special = miss.special
+
+    score = applyWrongInputPenalty(notes, input, currentTime, score, hit.anyHit)
+
+    val sustain = sustainProcessor.process(notes, input, currentTime, score, special)
+    notes = sustain.notes
+    score = sustain.score
+
+    notes = cleanup(notes, currentTime)
+
+    return state.copy(
+      currentTime = currentTime,
+      activeNotes = notes,
+      nextNoteIndex = nextIndex,
+      scoreState = score,
+      specialState = special
+    )
   }
 
-  private fun applySustainBreakPenalty(
-    notes: MutableList<ActiveNote>,
+  private fun updateSpecial(state: SpecialState, input: PlayerInput, dt: Double): SpecialState {
+    var result = specialSystem.update(state, dt)
+    if (input.activateSpecial) result = specialSystem.tryActivate(result)
+    return result
+  }
+
+  private fun applyWrongInputPenalty(
+    notes: List<ActiveNote>,
     input: PlayerInput,
     time: Double,
-    score: ScoreState
-  ): Pair<MutableList<ActiveNote>, ScoreState> {
+    score: ScoreState,
+    anyHit: Boolean
+  ): ScoreState {
 
-    if (input.justPressedFrets.isEmpty()) return notes to score
+    val hasPending = notes.any {
+      it.state == NoteState.PENDING &&
+          hitJudge.judge(it.note, time, hitWindow) == Judgement.HIT
+    }
 
-    var newScore = score
-    val updated = notes.map { note ->
-
-      if (note.state != NoteState.HOLDING) return@map note
-
-      val sustainLane = note.note.lane
-
-      // se apertou QUALQUER outra tecla além da do sustain → erro
-      val wrongPress = input.justPressedFrets.any { it != sustainLane }
-
-      if (wrongPress) {
-        newScore = ScoreState(
-          score = newScore.score,
-          combo = 0,
-          maxCombo = newScore.maxCombo,
-          multiplier = 1
-        )
-
-        // mata o sustain (não pode mais pontuar)
-        return@map note.copy(state = NoteState.MISSED)
-      }
-
-      note
-    }.toMutableList()
-
-    return updated to newScore
+    return if (input.justPressedFrets.isNotEmpty() && !anyHit && hasPending) {
+      scoreSystem.resetCombo(score)
+    } else score
   }
 
   private fun cleanup(notes: MutableList<ActiveNote>, time: Double): MutableList<ActiveNote> {
@@ -478,11 +422,4 @@ class GameEngine(
           it.state != NoteState.DONE
     }.toMutableList()
   }
-
-  private data class StepResult(
-    val notes: MutableList<ActiveNote>,
-    val score: ScoreState,
-    val special: SpecialState,
-    val anyHit: Boolean = false
-  )
 }
