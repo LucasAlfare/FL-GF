@@ -262,14 +262,22 @@ class GameEngine(
     val pending = notes.filter { it.state == NoteState.PENDING }
     val groups = pending.groupBy { it.note.time }
 
-    val target = groups.minByOrNull { (_, g) ->
-      g.minOf { abs(time - it.note.time) }
-    }
+    val target = groups.values
+      .filter { group ->
+        group.any { hitJudge.judge(it.note, time, hitWindow) == Judgement.HIT }
+      }
+      .minWithOrNull(
+        compareBy<List<ActiveNote>> { group ->
+          group.minOf { kotlin.math.abs(time - it.note.time) }
+        }.thenByDescending { group ->
+          group.minOf { it.note.time } <= time
+        }
+      )
 
-    target?.let { (_, group) ->
-      val within = group.any { hitJudge.judge(it.note, time, hitWindow) == Judgement.HIT }
+    target?.let { group ->
 
-      if (within && input.justPressedFrets.isNotEmpty()) {
+      if (input.justPressedFrets.isNotEmpty()) {
+
         val expected = group.map { it.note.lane }.toSet()
         val pressed = input.justPressedFrets
         val correct = expected.intersect(pressed)
@@ -277,19 +285,23 @@ class GameEngine(
         if (correct.isNotEmpty()) {
           anyHit = true
 
-          val isFull = correct.size == expected.size
-
+          val isFullChord = correct.size == expected.size
           val specialMult = specialSystem.multiplier(newSpecial)
+
           newScore = scoreSystem.apply(
             newScore,
-            if (isFull) Judgement.HIT else Judgement.MISS,
-            if (isFull) specialMult else 1
+            if (isFullChord) Judgement.HIT else Judgement.MISS,
+            if (isFullChord) specialMult else 1
           )
 
           group.forEach { active ->
             val idx = notes.indexOf(active)
+
             if (active.note.lane in correct) {
-              val newState = if (active.note.duration > 0) NoteState.HOLDING else NoteState.HIT
+
+              val newState =
+                if (active.note.duration > 0) NoteState.HOLDING
+                else NoteState.HIT
 
               notes[idx] = active.copy(
                 state = newState,
@@ -298,7 +310,9 @@ class GameEngine(
               )
 
               newSpecial = specialSystem.onNoteHit(newSpecial, active.note, allNotes)
+
             } else {
+
               notes[idx] = active.copy(state = NoteState.MISSED)
               newSpecial = specialSystem.onNoteMiss(newSpecial, active.note)
             }
