@@ -404,7 +404,7 @@ class GameEngine(
    */
   private fun cleanup() {
     activeNotes.removeIf {
-      it.missed && time > it.note.time + 1000
+      (it.missed || it.hit) && time > it.note.time + 1000
     }
   }
 }

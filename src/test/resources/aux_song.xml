@@ -1,0 +1,108 @@
+<?xml version="1.0"?>
+<Song>
+    <Properties>
+        <Version>0.1</Version>
+        <Title>Test Song</Title>
+        <Artist>ChatGPT</Artist>
+        <Album>Debug Album</Album>
+        <Year>2026</Year>
+        <BeatsPerSecond>16.0</BeatsPerSecond>
+        <BeatOffset>0.0</BeatOffset>
+        <HammerOnTime>0.25</HammerOnTime>
+        <PullOffTime>0.25</PullOffTime>
+        <AllowableErrorTime>0.25</AllowableErrorTime>
+        <Length>60</Length>
+        <MusicFileName>test.mp3</MusicFileName>
+        <MusicDirectoryHint>C:\</MusicDirectoryHint>
+    </Properties>
+
+    <Data>
+
+        <!-- Intro single notes -->
+        <Note time="1.000" duration="0" track="0"/>
+        <Note time="1.200" duration="0" track="1"/>
+        <Note time="1.400" duration="0" track="2"/>
+        <Note time="1.600" duration="0" track="3"/>
+        <Note time="1.800" duration="0" track="4"/>
+
+        <!-- Chord -->
+        <Note time="2.500" duration="0" track="1"/>
+        <Note time="2.500" duration="0" track="3"/>
+
+        <!-- Sustain -->
+        <Note time="3.000" duration="1.500" track="2"/>
+
+        <!-- Rapid notes -->
+        <Note time="5.000" duration="0" track="0"/>
+        <Note time="5.100" duration="0" track="0"/>
+        <Note time="5.200" duration="0" track="0"/>
+        <Note time="5.300" duration="0" track="0"/>
+        <Note time="5.400" duration="0" track="0"/>
+
+        <!-- Mixed lanes fast -->
+        <Note time="6.000" duration="0" track="0"/>
+        <Note time="6.100" duration="0" track="1"/>
+        <Note time="6.200" duration="0" track="2"/>
+        <Note time="6.300" duration="0" track="3"/>
+        <Note time="6.400" duration="0" track="4"/>
+
+        <!-- Special phrase -->
+        <Note time="8.000" duration="0" track="0" special="1"/>
+        <Note time="8.200" duration="0" track="1" special="1"/>
+        <Note time="8.400" duration="0" track="2" special="1"/>
+        <Note time="8.600" duration="0" track="3" special="1"/>
+
+        <!-- End of phrase (normal note) -->
+        <Note time="9.000" duration="0" track="2"/>
+
+        <!-- Chord sustain -->
+        <Note time="10.000" duration="2.000" track="1"/>
+        <Note time="10.000" duration="2.000" track="2"/>
+
+        <!-- Alternating pattern -->
+        <Note time="13.000" duration="0" track="0"/>
+        <Note time="13.200" duration="0" track="2"/>
+        <Note time="13.400" duration="0" track="4"/>
+        <Note time="13.600" duration="0" track="2"/>
+
+        <!-- Dense section -->
+        <Note time="15.000" duration="0" track="1"/>
+        <Note time="15.050" duration="0" track="2"/>
+        <Note time="15.100" duration="0" track="3"/>
+        <Note time="15.150" duration="0" track="4"/>
+        <Note time="15.200" duration="0" track="0"/>
+        <Note time="15.250" duration="0" track="1"/>
+        <Note time="15.300" duration="0" track="2"/>
+        <Note time="15.350" duration="0" track="3"/>
+
+        <!-- Long sustain -->
+        <Note time="18.000" duration="3.000" track="4"/>
+
+        <!-- Mixed chord + single -->
+        <Note time="22.000" duration="0" track="0"/>
+        <Note time="22.000" duration="0" track="1"/>
+        <Note time="22.300" duration="0" track="2"/>
+
+        <!-- Special phrase 2 -->
+        <Note time="25.000" duration="0" track="2" special="1"/>
+        <Note time="25.200" duration="0" track="3" special="1"/>
+        <Note time="25.400" duration="0" track="4" special="1"/>
+
+        <!-- Break phrase -->
+        <Note time="26.000" duration="0" track="1"/>
+
+        <!-- Ending fast notes -->
+        <Note time="30.000" duration="0" track="0"/>
+        <Note time="30.100" duration="0" track="1"/>
+        <Note time="30.200" duration="0" track="2"/>
+        <Note time="30.300" duration="0" track="3"/>
+        <Note time="30.400" duration="0" track="4"/>
+
+        <Note time="31.000" duration="0" track="4"/>
+        <Note time="31.100" duration="0" track="3"/>
+        <Note time="31.200" duration="0" track="2"/>
+        <Note time="31.300" duration="0" track="1"/>
+        <Note time="31.400" duration="0" track="0"/>
+
+    </Data>
+</Song>
