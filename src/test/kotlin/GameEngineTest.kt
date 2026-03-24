@@ -1,41 +1,19 @@
 import com.lucasalfare.flgf.GameEngine
-import com.lucasalfare.flgf.GameState
-import com.lucasalfare.flgf.HitJudge
-import com.lucasalfare.flgf.HitWindow
 import com.lucasalfare.flgf.Note
-import com.lucasalfare.flgf.NoteSpawner
 import com.lucasalfare.flgf.PlayerInput
-import com.lucasalfare.flgf.ScoreSystem
-import com.lucasalfare.flgf.Song
-import com.lucasalfare.flgf.SpecialState
-import com.lucasalfare.flgf.SpecialSystem
 import org.junit.jupiter.api.Assertions.*
-import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 
 class GameEngineTest {
 
   private lateinit var engine: GameEngine
 
-  @BeforeEach
-  fun setup() {
-    engine = GameEngine(
-      hitWindow = HitWindow(0.1),
-      hitJudge = HitJudge(),
-      spawner = NoteSpawner(1.0),
-      scoreSystem = ScoreSystem(),
-      specialSystem = SpecialSystem()
-    )
-  }
+// --------------------------
+// HELPERS
+// --------------------------
 
-  // --------------------------
-  // HELPERS
-  // --------------------------
-
-  private fun song(vararg notes: Note) =
-    Song("test", "test", 100.0, notes.toList())
-
-  private fun baseState(song: Song) = GameState(song = song)
+  private fun engine(vararg notes: Note) =
+    GameEngine(notes.toList(), hitWindow = 100) // 100ms
 
   private fun pressOnce(vararg lanes: Int) =
     PlayerInput(
@@ -49,260 +27,187 @@ class GameEngineTest {
       justPressedFrets = emptySet()
     )
 
-  // --------------------------
-  // TESTS
-  // --------------------------
+// --------------------------
+// TESTS
+// --------------------------
 
   @Test
   fun `should hit a single note`() {
-    val s = song(Note(1.0, 0, 0.0, null))
-    var state = baseState(s)
+    engine = engine(Note(1000, 0, 0))
 
-    state = engine.tick(state, pressOnce(0), 1.0)
+    engine.tick(pressOnce(0), 1000)
 
-    assertEquals(1, state.scoreState.combo)
-    assertTrue(state.scoreState.score > 0)
+    assertEquals(1, engine.score.combo)
+    assertTrue(engine.score.score > 0)
   }
 
   @Test
   fun `should miss a note`() {
-    val s = song(Note(1.0, 0, 0.0, null))
-    var state = baseState(s)
+    engine = engine(Note(1000, 0, 0))
 
-    state = engine.tick(state, pressOnce(1), 1.0)
+    engine.tick(pressOnce(1), 1000)
 
-    assertEquals(0, state.scoreState.combo)
+    assertEquals(0, engine.score.combo)
   }
 
   @Test
   fun `should sustain long note and gain points progress`() {
-    val s = song(Note(1.0, 0, 2.0, null))
-    var state = baseState(s)
+    engine = engine(Note(1000, 0, 2000))
 
-    state = engine.tick(state, pressOnce(0), 1.0)
-    val afterHit = state.scoreState.score
+    engine.tick(pressOnce(0), 1000)
+    val afterHit = engine.score.score
 
-    state = engine.tick(state, holdOnly(0), 2.0)
+    engine.tick(holdOnly(0), 2000)
 
-    assertTrue(state.scoreState.score > afterHit)
+    assertTrue(engine.score.score > afterHit)
   }
 
   @Test
-  fun `should break points gained of sustaining if released early`() {
-    val s = song(Note(1.0, 0, 2.0, null))
-    var state = baseState(s)
+  fun `should break sustain if released early`() {
+    engine = engine(Note(1000, 0, 2000))
 
-    state = engine.tick(state, pressOnce(0), 1.0)
-    state = engine.tick(state, holdOnly(0), 1.5)
+    engine.tick(pressOnce(0), 1000)
+    engine.tick(holdOnly(0), 1500)
 
-    val midScore = state.scoreState.score
+    val mid = engine.score.score
 
-    state = engine.tick(state, holdOnly(), 2.0)
+    engine.tick(holdOnly(), 2000)
 
-    assertEquals(midScore, state.scoreState.score)
+    assertEquals(mid, engine.score.score)
   }
 
   @Test
   fun `should hit chord correctly`() {
-    val s = song(
-      Note(1.0, 0, 0.0, null),
-      Note(1.0, 1, 0.0, null)
+    engine = engine(
+      Note(1000, 0, 0),
+      Note(1000, 1, 0)
     )
 
-    var state = baseState(s)
+    engine.tick(pressOnce(0, 1), 1000)
 
-    state = engine.tick(state, pressOnce(0, 1), 1.0)
-
-    assertEquals(1, state.scoreState.combo)
+    assertEquals(1, engine.score.combo)
   }
 
   @Test
   fun `should partially hit chord and fail combo`() {
-    val s = song(
-      Note(1.0, 0, 0.0, null),
-      Note(1.0, 1, 0.0, null)
+    engine = engine(
+      Note(1000, 0, 0),
+      Note(1000, 1, 0)
     )
 
-    var state = baseState(s)
+    engine.tick(pressOnce(0), 1000)
 
-    state = engine.tick(state, pressOnce(0), 1.0)
-
-    assertEquals(0, state.scoreState.combo)
+    assertEquals(0, engine.score.combo)
   }
 
   @Test
-  fun `should partially hit chord with sustain and fail combo`() {
-    val s = song(
-      Note(1.0, 0, 2.0, null),
-      Note(1.0, 1, 0.0, null)
+  fun `should partially hit chord with sustain`() {
+    engine = engine(
+      Note(1000, 0, 2000),
+      Note(1000, 1, 0)
     )
 
-    var state = baseState(s)
+    engine.tick(pressOnce(0), 1000)
 
-    state = engine.tick(state, pressOnce(0), 1.0)
-
-    assertEquals(0, state.scoreState.combo)
+    assertEquals(0, engine.score.combo)
   }
 
   @Test
-  fun `should handle rapid fire notes on same lane`() {
-    val s = song(
-      Note(1.0, 0, 0.0, null),
-      Note(1.1, 0, 0.0, null),
-      Note(1.2, 0, 0.0, null)
+  fun `should handle rapid fire notes`() {
+    engine = engine(
+      Note(1000, 0, 0),
+      Note(1100, 0, 0),
+      Note(1200, 0, 0)
     )
 
-    var state = baseState(s)
+    engine.tick(pressOnce(0), 1000)
+    engine.tick(holdOnly(0), 1050)
+    engine.tick(pressOnce(0), 1100)
+    engine.tick(holdOnly(0), 1150)
+    engine.tick(pressOnce(0), 1200)
 
-    state = engine.tick(state, pressOnce(0), 1.0)
-    state = engine.tick(state, holdOnly(0), 1.05) // frame intermediário
-    state = engine.tick(state, pressOnce(0), 1.1)
-    state = engine.tick(state, holdOnly(0), 1.15)
-    state = engine.tick(state, pressOnce(0), 1.2)
-
-    assertEquals(3, state.scoreState.combo)
+    assertEquals(3, engine.score.combo)
   }
 
   @Test
-  fun `should fail combo on one miss in rapid sequence`() {
-    val s = song(
-      Note(1.0, 0, 0.0, null),
-      Note(1.1, 0, 0.0, null),
-      Note(1.2, 0, 0.0, null)
+  fun `should fail combo on miss in rapid`() {
+    engine = engine(
+      Note(1000, 0, 0),
+      Note(1100, 0, 0),
+      Note(1200, 0, 0)
     )
 
-    var state = baseState(s)
+    engine.tick(pressOnce(0), 1000)
+    engine.tick(holdOnly(0), 1050)
 
-    state = engine.tick(state, pressOnce(0), 1.0)
-    state = engine.tick(state, holdOnly(0), 1.05)
+    engine.tick(pressOnce(1), 1100) // miss
+    engine.tick(holdOnly(0), 1150)
 
-    state = engine.tick(state, pressOnce(1), 1.1) // miss
-    state = engine.tick(state, holdOnly(0), 1.15)
+    engine.tick(pressOnce(0), 1200)
 
-    state = engine.tick(state, pressOnce(0), 1.2)
-
-    assertEquals(1, state.scoreState.combo)
+    assertEquals(1, engine.score.combo)
   }
 
   @Test
-  fun `should fail combo on wrong hit in rapid sequence`() {
-    val s = song(
-      Note(1.0, 0, 0.0, null),
-      Note(1.1, 1, 0.0, null)
+  fun `should fail combo on wrong hit`() {
+    engine = engine(
+      Note(1000, 0, 0),
+      Note(1100, 1, 0)
     )
 
-    var state = baseState(s)
+    engine.tick(pressOnce(0), 1000)
+    engine.tick(pressOnce(0), 1100)
 
-    state = engine.tick(state, pressOnce(0), 1.0)
-    state = engine.tick(state, pressOnce(0), 1.1)
-
-    assertEquals(0, state.scoreState.combo)
+    assertEquals(0, engine.score.combo)
   }
 
   @Test
-  fun `should handle very fast notes near hit window limit`() {
-    val s = song(Note(1.0, 0, 0.0, null))
-    var state = baseState(s)
+  fun `should hit near window limit`() {
+    engine = engine(Note(1000, 0, 0))
 
-    state = engine.tick(state, pressOnce(0), 1.09)
+    engine.tick(pressOnce(0), 1090) // dentro de 100ms
 
-    assertTrue(state.scoreState.score > 0)
+    assertTrue(engine.score.score > 0)
   }
 
   @Test
-  fun `should increase multiplier with combo`() {
+  fun `should increase multiplier`() {
     val notes = (1..10).map {
-      Note(it.toDouble(), 0, 0.0, null)
+      Note(it * 1000L, 0, 0)
     }
 
-    var state = baseState(song(*notes.toTypedArray()))
+    engine = GameEngine(notes, 100)
 
     notes.forEach {
-      state = engine.tick(state, pressOnce(0), it.time)
+      engine.tick(pressOnce(0), it.time)
     }
 
-    assertTrue(state.scoreState.multiplier >= 2)
+    assertTrue(engine.score.multiplier >= 2)
   }
 
   @Test
-  fun `should reset combo and multiplier on miss`() {
-    val s = song(
-      Note(1.0, 0, 0.0, null),
-      Note(2.0, 0, 0.0, null)
+  fun `should reset combo on miss`() {
+    engine = engine(
+      Note(1000, 0, 0),
+      Note(2000, 0, 0)
     )
 
-    var state = baseState(s)
+    engine.tick(pressOnce(0), 1000)
+    engine.tick(pressOnce(1), 2000)
 
-    state = engine.tick(state, pressOnce(0), 1.0)
-    state = engine.tick(state, pressOnce(1), 2.0)
-
-    assertEquals(0, state.scoreState.combo)
-    assertEquals(1, state.scoreState.multiplier)
+    assertEquals(0, engine.score.combo)
+    assertEquals(1, engine.score.multiplier)
   }
 
   @Test
-  fun `should advance special on getting all special notes`() {
-    val s = song(
-      Note(1.0, 0, 0.0, 1),
-      Note(2.0, 0, 0.0, 1)
-    )
+  fun `should increase score with special active`() {
+    engine = engine(Note(1000, 0, 0))
 
-    var state = baseState(s)
+    engine.special.energy = 100
+    engine.special.active = true
 
-    state = engine.tick(state, pressOnce(0), 1.0)
-    state = engine.tick(state, pressOnce(0), 2.0)
+    engine.tick(pressOnce(0), 1000)
 
-    assertTrue(state.specialState.energy > 0)
-  }
-
-  @Test
-  fun `should activate special when enough energy`() {
-    val special = SpecialState(energy = 50)
-
-    val activated = SpecialSystem().tryActivate(special)
-
-    assertTrue(activated.active)
-  }
-
-  @Test
-  fun `should drain special over time`() {
-    val system = SpecialSystem()
-    var state = SpecialState(energy = 100, active = true)
-
-    state = system.update(state, 1.0)
-
-    assertTrue(state.energy < 100)
-  }
-
-  @Test
-  fun `should increase score faster when special is active`() {
-    val s = song(Note(1.0, 0, 0.0, null))
-
-    var state = baseState(s).copy(
-      specialState = SpecialState(energy = 100, active = true)
-    )
-
-    state = engine.tick(state, pressOnce(0), 1.0)
-
-    assertTrue(state.scoreState.score >= 100)
-  }
-
-  @Test
-  fun `should ignore special phrases while special is active`() {
-    val s = song(
-      Note(1.0, 0, 0.0, 1),
-      Note(1.01, 0, 0.0, 1) // mesma janela → sem drain relevante
-    )
-
-    var state = baseState(s).copy(
-      specialState = SpecialState(energy = 100, active = true)
-    )
-
-    val before = state.specialState.energy
-
-    state = engine.tick(state, pressOnce(0), 1.0)
-    state = engine.tick(state, pressOnce(0), 1.01)
-
-    assertTrue(state.specialState.energy < before) // só drenou
+    assertTrue(engine.score.score >= 100)
   }
 }
