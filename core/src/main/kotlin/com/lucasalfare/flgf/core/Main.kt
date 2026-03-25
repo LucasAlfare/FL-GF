@@ -1,8 +1,9 @@
-package com.lucasalfare.flgf
+package com.lucasalfare.flgf.core
 
 import org.w3c.dom.Element
 import java.io.InputStream
 import javax.xml.parsers.DocumentBuilderFactory
+import kotlin.math.abs
 
 // ==================== DATA MODELS ====================
 
@@ -181,7 +182,7 @@ class GameEngine(
     // All notes at that exact time (chord/group)
     val group = pending.filter { it.note.time == nextTime }
 
-    val inWindow = kotlin.math.abs(time - nextTime) <= hitWindow
+    val inWindow = abs(time - nextTime) <= hitWindow
 
     // ===== HIT LOGIC =====
     if (inWindow && input.justPressedFrets.isNotEmpty()) {

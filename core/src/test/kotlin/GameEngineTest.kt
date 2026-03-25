@@ -1,6 +1,6 @@
-import com.lucasalfare.flgf.GameEngine
-import com.lucasalfare.flgf.Note
-import com.lucasalfare.flgf.PlayerInput
+import com.lucasalfare.flgf.core.GameEngine
+import com.lucasalfare.flgf.core.Note
+import com.lucasalfare.flgf.core.PlayerInput
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 

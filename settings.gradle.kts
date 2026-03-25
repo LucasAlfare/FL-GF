@@ -3,4 +3,4 @@ plugins {
 }
 rootProject.name = "FL-GF"
 
-include(":core")
+include(":core", ":desktop")

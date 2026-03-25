@@ -1,7 +1,6 @@
-import com.lucasalfare.flgf.GameEngine
-import com.lucasalfare.flgf.Note
-import com.lucasalfare.flgf.PlayerInput
-import com.lucasalfare.flgf.SongXmlParser
+import com.lucasalfare.flgf.core.GameEngine
+import com.lucasalfare.flgf.core.PlayerInput
+import com.lucasalfare.flgf.core.SongXmlParser
 import kotlin.test.assertTrue
 import java.io.InputStream
 import kotlin.test.Test

@@ -10,6 +10,7 @@ repositories {
 }
 
 dependencies {
+  implementation("com.badlogicgames.gdx:gdx:1.14.0")
   testImplementation(kotlin("test"))
 }
 
