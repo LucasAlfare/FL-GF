@@ -45,7 +45,7 @@ data class Note(
  * @property holding Whether the player is currently holding a sustain note.
  * @property sustainProgress How much of the sustain duration has been completed.
  */
-data class ActiveNote(
+data class NoteState(
   val note: Note,
   var hit: Boolean = false,
   var missed: Boolean = false,
@@ -110,7 +110,7 @@ class GameEngine(
   private var nextIndex = 0
 
   /** Notes currently active and interactable. */
-  private val activeNotes = mutableListOf<ActiveNote>()
+  private val notesStates = mutableListOf<NoteState>()
 
   /** Public score state. */
   val score = ScoreState()
@@ -155,7 +155,7 @@ class GameEngine(
    */
   private fun spawnNotes() {
     while (nextIndex < notes.size && notes[nextIndex].time <= time + hitWindow) {
-      activeNotes.add(ActiveNote(notes[nextIndex]))
+      notesStates.add(NoteState(notes[nextIndex]))
       nextIndex++
     }
   }
@@ -172,7 +172,7 @@ class GameEngine(
    */
   private fun resolveNotes(input: PlayerInput) {
 
-    val pending = activeNotes.filter { !it.hit && !it.missed }
+    val pending = notesStates.filter { !it.hit && !it.missed }
     if (pending.isEmpty()) return
 
     // Find the next note time (earliest)
@@ -335,7 +335,7 @@ class GameEngine(
   private fun processSustain(input: PlayerInput, dt: Long) {
     val sustainRatePerSecond = 50.0
 
-    activeNotes.forEach {
+    notesStates.forEach {
       if (!it.holding) return@forEach
 
       val holding = it.note.lane in input.pressedFrets
@@ -403,7 +403,7 @@ class GameEngine(
    * then discarded after a fixed delay (1000 ms).
    */
   private fun cleanup() {
-    activeNotes.removeIf {
+    notesStates.removeIf {
       (it.missed || it.hit) && time > it.note.time + 1000
     }
   }
