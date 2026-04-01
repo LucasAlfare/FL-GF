@@ -8,6 +8,7 @@ fun main() {
   val config = Lwjgl3ApplicationConfiguration()
   config.setTitle("Meu Jogo")
   config.setWindowedMode(800, 600)
+  config.setForegroundFPS(30)
 
   Lwjgl3Application(GuitarFlashGame(), config)
 }
