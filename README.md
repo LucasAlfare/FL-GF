@@ -1,92 +1,351 @@
-# FL-GF
+# 🎸 FL-GF
 
-A Kotlin-based experimental clone of the old **Guitar Flash** game, focused on rebuilding the core gameplay logic with a clean and testable architecture.
+A clean-room rewrite of the classic **Guitar Flash** (Brazilian Guitar Hero clone), built with **pure Kotlin** and a modern architecture.
 
-This project is not intended to be a full production-ready game. The main goal is to understand and reimplement the underlying mechanics of rhythm games like Guitar Flash / Guitar Hero in a structured and maintainable way.
-
----
-
-## Current Status
-
-The project is in an **early development stage**.
-
-So far, the focus has been on:
-
-* Core **gameplay rules and engine**
-* **Domain modeling**
-* **Use cases**
-* **Automated tests**
-
-The architecture follows a **Clean Architecture** approach, prioritizing separation of concerns and testability.
-
-### Not implemented yet
-
-* Audio system (entire **infrastructure layer** for audio is still missing)
-* Rendering / graphics layer
-* Input adapters (framework/platform-specific)
-* Full gameplay integration
+This project focuses on **correctness, maintainability, and testability**, addressing structural issues found in the original ActionScript implementation.
 
 ---
 
-## Core Gameplay Requirements
+## 📌 Project Status
 
-The engine is being designed to support the following behaviors:
+**Current state:** 🟡 In Progress (Core gameplay functional)
 
-### Notes & Timing
+### ✅ Implemented
 
-* Hit a single note correctly
-* Miss a note
-* Handle very fast notes near the hit window limit
-* Handle rapid sequences on the same lane
+* Core gameplay engine (`GameEngine`)
+* Deterministic time-based update loop (`tick`)
+* Note spawning & lifecycle
+* Hit/miss resolution (including chords)
+* Sustain (hold note) system
+* Score system (combo + multiplier)
+* Special ability system (star power-like)
+* XML chart parser (robust & fault-tolerant)
+* Basic rendering prototype using LibGDX
 
-### Chords
+### 🚧 In Progress / Missing
 
-* Hit chords correctly
-* Partially hit chords
-* Break combo when a chord is not fully hit
-* Handle mixed sustain behavior within chords
-
-### Sustain Notes
-
-* Sustain long notes and gain progressive score
-* Interrupt sustain early and lose potential points
-* Continue sustain correctly after special ends
-* Stop special bonus gain when special ends
-
-### Combo & Score
-
-* Increase combo on correct hits
-* Break combo on miss or wrong input
-* Increase multiplier based on combo
-* Reset combo and multiplier on failure
-* Fail combo on mistakes during fast sequences
-
-### Special System
-
-* Build special energy by completing note phrases
-* Only gain energy when all notes in a phrase are hit
-* Activate special when enough energy is available
-* Drain special energy over time once activated
-* Increase score gain while special is active
-* Increase sustain score while special is active
-* Ignore special phrases while special is active
+* Real input handling (keyboard/controller)
+* Audio synchronization
+* UI (menus, HUD, feedback)
+* Visual polish (effects, animations)
+* Asset pipeline improvements
+* Full test suite implementation (scenarios already defined)
+* Performance tuning
 
 ---
 
-## Graphics (Future Plans)
+## 🧱 Project Structure
 
-Graphical assets are not a priority right now.
+```
+FL-GF
+├── build.gradle.kts
+├── settings.gradle.kts
+├── core
+│   ├── build.gradle.kts
+│   ├── src
+│   │   ├── Core.kt
+│   │   ├── GuitarFlashGame.kt
+│   ├── resources
+│   │   └── (original game assets - decompiled)
+│   └── testes
+├── desktop
+│   ├── build.gradle.kts
+│   └── launcher (LibGDX desktop entrypoint)
+```
 
-The intention is to eventually reuse or recreate visuals inspired by the **original Guitar Flash**, keeping a similar look and feel.
+### Modules
+
+* **core**
+
+    * Contains all game logic and rendering prototype
+    * Fully independent gameplay engine
+* **desktop**
+
+    * Desktop launcher using LibGDX backend
 
 ---
 
-## Goal
+## ⚙️ Tech Stack
 
-The main goal of this project is to build a **clean, deterministic, and testable rhythm game engine**, rather than a feature-complete clone.
+* **Kotlin (JVM)**
+* **LibGDX** (rendering + platform abstraction)
+* **Gradle Kotlin DSL**
+* XML parsing via standard Java APIs
 
 ---
 
-## License
+## 🧠 Architecture Overview
 
-No license defined yet. This is currently an experimental project and may change in the future.
+### 1. Engine-Centric Design
+
+The project is built around a **pure gameplay engine**:
+
+```kotlin
+fun tick(input: PlayerInput, currentTime: Long)
+```
+
+This makes the system:
+
+* deterministic
+* testable
+* independent from rendering
+* independent from input source
+
+---
+
+### 2. State Isolation
+
+Instead of global mutable state, the engine uses explicit data models:
+
+```kotlin
+data class ScoreState(...)
+data class SpecialState(...)
+data class NoteState(...)
+```
+
+Everything is:
+
+* scoped
+* predictable
+* composable
+
+---
+
+### 3. Time-Driven Logic
+
+All gameplay is driven by **absolute time**, not frames.
+
+This avoids:
+
+* frame dependency bugs
+* inconsistent timing across machines
+
+---
+
+### 4. Separation of Concerns
+
+| Responsibility | Location               |
+| -------------- | ---------------------- |
+| Game rules     | `GameEngine`           |
+| Rendering      | `GuitarFlashGame`      |
+| Parsing        | `SongXmlParser`        |
+| Data models    | Immutable data classes |
+
+---
+
+## 🔥 Original vs Rewrite
+
+The original Guitar Flash codebase suffers from heavy coupling, global state, and implicit behavior.
+
+This rewrite fixes those issues systematically.
+
+---
+
+### ❌ Problem 1: Global State Everywhere
+
+**Original (ActionScript):**
+
+```actionscript
+public static var pontos:Number = 0;
+public static var pontosG:Number = 0;
+public static var especial:Boolean = false;
+public static var fret1:Boolean = false;
+public static var fret2:Boolean = false;
+```
+
+
+
+* Everything is global
+* No ownership of data
+* Impossible to test in isolation
+* Side effects everywhere
+
+---
+
+**✅ Rewrite (Kotlin):**
+
+```kotlin
+data class ScoreState(
+  var score: Int = 0,
+  var combo: Int = 0,
+  var multiplier: Int = 1
+)
+
+data class SpecialState(
+  var energy: Int = 0,
+  var active: Boolean = false
+)
+```
+
+✔ State is localized
+✔ Explicit ownership
+✔ Test-friendly
+✔ No hidden dependencies
+
+---
+
+### ❌ Problem 2: Game Logic Mixed with Rendering & Input
+
+**Original:**
+
+```actionscript
+addEventListener(Event.ENTER_FRAME, tcVerif);
+stage.addEventListener(KeyboardEvent.KEY_DOWN, tcEntra);
+```
+
+* Input, rendering, and logic all tied together
+* Behavior depends on Flash runtime events
+* Hard to reason about execution order
+
+---
+
+**✅ Rewrite:**
+
+```kotlin
+engine.tick(input, currentTime)
+```
+
+✔ Single entry point
+✔ Deterministic execution order
+✔ Decoupled from framework
+
+---
+
+### ❌ Problem 3: Implicit, Scattered Rules
+
+Original logic is spread across:
+
+* `jogo.as`
+* `musicaXML.as`
+* global variables
+* frame-based conditions
+
+Example (simplified):
+
+```actionscript
+if(root["paleta" + i].currentFrame == 2 || root["paleta" + i].currentFrame == 6)
+{
+    root["paleta" + i].gotoAndPlay(3);
+}
+```
+
+* Meaning depends on animation frames (!)
+* No clear rule definition
+* Hard to maintain
+
+---
+
+**✅ Rewrite: Explicit Rules**
+
+```kotlin
+val expected = group.map { it.note.lane }.toSet()
+val pressed = input.justPressedFrets
+
+val exact = expected == pressed
+val partial = expected.intersect(pressed).isNotEmpty()
+```
+
+✔ Rules are declarative
+✔ No hidden meaning
+✔ Easy to extend and debug
+
+---
+
+### ❌ Problem 4: No Clear Note Lifecycle
+
+Original mixes:
+
+* spawn
+* movement
+* hit detection
+* scoring
+
+All inside giant loops.
+
+---
+
+**✅ Rewrite: Structured Pipeline**
+
+```kotlin
+fun tick(...) {
+  updateSpecial(...)
+  spawnNotes()
+  resolveNotes(...)
+  processSustain(...)
+  cleanup()
+}
+```
+
+✔ Clear lifecycle
+✔ Predictable flow
+✔ Easy to modify
+
+---
+
+### ❌ Problem 5: Fragile XML Handling
+
+**Original:**
+
+```actionscript
+xmlNotas = xml.Data.Note.attribute("track");
+xmlTempo = xml.Data.Note.attribute("time");
+```
+
+* No validation
+* Assumes perfect data
+* Crashes or corrupts silently
+
+---
+
+**✅ Rewrite: Robust Parser**
+
+```kotlin
+val timeSec = node.getAttribute("time").toDoubleOrNull() ?: continue
+val lane = node.getAttribute("track").toIntOrNull() ?: continue
+```
+
+✔ Skips invalid data safely
+✔ Converts units explicitly
+✔ Guarantees sorted output
+
+---
+
+## 🧪 Testing Strategy
+
+Test scenarios are already defined (to be automated):
+
+* Single note hit/miss
+* Chords (correct and partial)
+* Sustain behavior
+* Combo & multiplier progression
+* Rapid sequences
+* Special activation & drain
+* Edge timing cases
+
+The engine design allows **pure unit testing without rendering**.
+
+---
+
+## 🎯 Goals
+
+* Rebuild Guitar Flash with modern engineering practices
+* Preserve gameplay feel while fixing structural issues
+* Serve as a reference for:
+
+    * game loop design
+    * deterministic simulation
+    * refactoring legacy code
+
+---
+
+## ⚠️ Disclaimer
+
+This project is a **technical rewrite for study and improvement purposes**.
+
+Assets included in `/resources` were extracted from the original game and are not owned by this repository.
+
+---
+
+## 👤 Author
+
+**Francisco Lucas (FL)**
