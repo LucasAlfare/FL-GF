@@ -6,9 +6,10 @@ import com.badlogic.gdx.graphics.GL20
 import com.badlogic.gdx.graphics.OrthographicCamera
 import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.graphics.g2d.SpriteBatch
+import com.badlogic.gdx.math.MathUtils
+import com.badlogic.gdx.math.MathUtils.atan2
 import com.badlogic.gdx.utils.TimeUtils
 
-// draft for graphics. focus here is not elegancy or performance (yet) totally bad and trashy yet
 class GuitarFlashGame : ApplicationAdapter() {
 
   private lateinit var batch: SpriteBatch
@@ -50,12 +51,89 @@ class GuitarFlashGame : ApplicationAdapter() {
 
     batch.begin()
     drawTrack()
-    drawNotes(currentTime)
+    drawSustains(currentTime) // 👈 DESENHA PRIMEIRO
+    drawNotes(currentTime)    // 👈 NOTA POR CIMA
     batch.end()
   }
 
   private fun drawTrack() {
     batch.draw(Assets.track, 0f, 0f, 800f, 600f)
+  }
+
+  private fun drawSustains(currentTime: Long) {
+    val segments = 24
+    for (note in song.notes) {
+      if (note.duration <= 0) continue
+      val startTimeNote = note.time
+      val endTimeNote = note.time + note.duration
+
+      val timeToStart = startTimeNote - currentTime
+      val timeToEnd = endTimeNote - currentTime
+
+      if (timeToEnd < -200 || timeToStart > travelTime) continue
+
+      val color = laneToColor(note.lane)
+      val texture = Assets.sustainNotes[color] ?: continue
+
+      // find exact "sustain coordinates", they are slightly different from the notes
+      val (xTop, xBottom) = laneCoords(note.lane)
+
+      var prevX = 0f
+      var prevY = 0f
+      var hasPrev = false
+
+      for (i in 0..segments) {
+
+        val t = i / segments.toFloat()
+
+        val timeAt = startTimeNote + note.duration * t
+        val timeToPoint = timeAt - currentTime
+
+        val progress = 1f - (timeToPoint / travelTime)
+        if (progress !in 0f..1.2f) continue
+
+        val eased = progress * progress
+
+        val x = xTop + (xBottom - xTop) * eased
+        val y = yTop + (yBottom - yTop) * eased
+
+        if (hasPrev) {
+          val dx = x - prevX
+          val dy = y - prevY
+
+          val length = kotlin.math.sqrt(dx * dx + dy * dy)
+          if (length > 0f) {
+
+            val angle = kotlin.math.atan2(dy, dx) * MathUtils.radiansToDegrees
+
+            val width = texture.width.toFloat()
+
+            batch.draw(
+              texture,
+              prevX,
+              prevY,
+              width / 2,
+              0f,
+              width,
+              length,
+              1f,
+              1f,
+              angle,
+              0,
+              0,
+              texture.width,
+              texture.height,
+              false,
+              false
+            )
+          }
+        }
+
+        prevX = x
+        prevY = y
+        hasPrev = true
+      }
+    }
   }
 
   private fun drawNotes(currentTime: Long) {
@@ -85,23 +163,13 @@ class GuitarFlashGame : ApplicationAdapter() {
     }
   }
 
-  /**
-   * Decide qual textura usar baseado em:
-   * - Special note
-   * - Special ativo
-   */
   private fun resolveNoteTexture(note: Note): Texture {
-
     val color = laneToColor(note.lane)
 
     return when {
       engine.special.active -> Assets.buffedNote
-
-      note.isSpecial -> Assets.starNotes[color]
-        ?: error("Missing star note texture for $color")
-
-      else -> Assets.defaultNotes[color]
-        ?: error("Missing default note texture for $color")
+      note.isSpecial -> Assets.starNotes[color]!!
+      else -> Assets.defaultNotes[color]!!
     }
   }
 
@@ -130,12 +198,11 @@ class GuitarFlashGame : ApplicationAdapter() {
 }
 
 object Assets {
-
-  lateinit var track: Texture
-    private set
+  lateinit var track: Texture private set
 
   val defaultNotes = mutableMapOf<String, Texture>()
   val starNotes = mutableMapOf<String, Texture>()
+  val sustainNotes = mutableMapOf<String, Texture>()
 
   lateinit var buffedNote: Texture
     private set
@@ -144,22 +211,29 @@ object Assets {
 
     track = load("track.png")
 
-    // ===== DEFAULT NOTES =====
+    // DEFAULT
     loadDefault("green")
     loadDefault("red")
     loadDefault("yellow")
     loadDefault("blue")
     loadDefault("orange")
 
-    // ===== STAR NOTES =====
+    // STAR
     loadStar("green")
     loadStar("red")
     loadStar("yellow")
     loadStar("blue")
     loadStar("orange")
 
-    // ===== BUFFED NOTE =====
-    buffedNote = load("buffed_by_active_special_note.png")
+    // SUSTAIN
+    loadSustain("green")
+    loadSustain("red")
+    loadSustain("yellow")
+    loadSustain("blue")
+    loadSustain("orange")
+
+    // BUFFED
+    buffedNote = load("buffed_by_active_especial_note.png")
   }
 
   private fun loadDefault(color: String) {
@@ -172,19 +246,25 @@ object Assets {
       load("star_notes/star_$color.png")
   }
 
+  private fun loadSustain(color: String) {
+    sustainNotes[color] =
+      load("sustains/${color}_sustain.png")
+  }
+
   private fun load(path: String): Texture {
     return Texture(Gdx.files.internal(path))
   }
 
   fun dispose() {
     track.dispose()
+    buffedNote.dispose()
 
     defaultNotes.values.forEach { it.dispose() }
     starNotes.values.forEach { it.dispose() }
-
-    buffedNote.dispose()
+    sustainNotes.values.forEach { it.dispose() }
 
     defaultNotes.clear()
     starNotes.clear()
+    sustainNotes.clear()
   }
 }

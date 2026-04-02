@@ -17,13 +17,12 @@
     </Properties>
 
     <Data>
-
-        <!-- Intro single notes -->
-        <Note time="1.000" duration="0" track="0"/>
-        <Note time="1.200" duration="0" track="1"/>
-        <Note time="1.400" duration="0" track="2"/>
-        <Note time="1.600" duration="0" track="3"/>
-        <Note time="1.800" duration="0" track="4"/>
+        <!-- Intro single notes with sustain -->
+        <Note time="1.000" duration="0.500" track="0"/>
+        <Note time="1.200" duration="0.500" track="1"/>
+        <Note time="1.400" duration="0.500" track="2"/>
+        <Note time="1.600" duration="0.500" track="3"/>
+        <Note time="1.800" duration="0.500" track="4"/>
 
         <!-- Chord -->
         <Note time="2.500" duration="0" track="1"/>
