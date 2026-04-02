@@ -2,15 +2,11 @@ package com.lucasalfare.flgf.core
 
 import com.badlogic.gdx.ApplicationAdapter
 import com.badlogic.gdx.Gdx
-import com.badlogic.gdx.Input
-import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.GL20
 import com.badlogic.gdx.graphics.OrthographicCamera
 import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.graphics.g2d.SpriteBatch
-import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.utils.TimeUtils
-import kotlin.math.pow
 
 // draft for graphics. focus here is not elegancy or performance (yet) totally bad and trashy yet
 class GuitarFlashGame : ApplicationAdapter() {
@@ -28,6 +24,7 @@ class GuitarFlashGame : ApplicationAdapter() {
 
   override fun create() {
     batch = SpriteBatch()
+
     camera = OrthographicCamera().apply {
       setToOrtho(false, 800f, 600f)
     }
@@ -58,26 +55,28 @@ class GuitarFlashGame : ApplicationAdapter() {
   }
 
   private fun drawTrack() {
-    batch.draw(Assets.getTexture("track"), 0f, 0f, 800f, 600f)
+    batch.draw(Assets.track, 0f, 0f, 800f, 600f)
   }
 
   private fun drawNotes(currentTime: Long) {
     for (note in song.notes) {
-      val timeToHit = note.time - currentTime
 
+      val timeToHit = note.time - currentTime
       if (timeToHit < -200 || timeToHit > travelTime) continue
 
       val progress = 1f - (timeToHit.toFloat() / travelTime)
       if (progress !in 0f..1.2f) continue
 
       val eased = progress * progress
+
       val (xTop, xBottom) = laneCoords(note.lane)
 
       val x = xTop + (xBottom - xTop) * eased
       val y = yTop + (yBottom - yTop) * eased
+
       val scale = 0.2f + eased
 
-      val texture = Assets.getTexture(noteTextureKey(note.lane))
+      val texture = resolveNoteTexture(note)
 
       val width = texture.width * scale
       val height = texture.height * scale
@@ -86,7 +85,35 @@ class GuitarFlashGame : ApplicationAdapter() {
     }
   }
 
-  // absolute coordinates on screen?
+  /**
+   * Decide qual textura usar baseado em:
+   * - Special note
+   * - Special ativo
+   */
+  private fun resolveNoteTexture(note: Note): Texture {
+
+    val color = laneToColor(note.lane)
+
+    return when {
+      engine.special.active -> Assets.buffedNote
+
+      note.isSpecial -> Assets.starNotes[color]
+        ?: error("Missing star note texture for $color")
+
+      else -> Assets.defaultNotes[color]
+        ?: error("Missing default note texture for $color")
+    }
+  }
+
+  private fun laneToColor(lane: Int) = when (lane) {
+    0 -> "green"
+    1 -> "red"
+    2 -> "yellow"
+    3 -> "blue"
+    4 -> "orange"
+    else -> error("Invalid lane")
+  }
+
   private fun laneCoords(lane: Int) = when (lane) {
     0 -> 412f to 75f
     1 -> 408f to 235f
@@ -96,15 +123,6 @@ class GuitarFlashGame : ApplicationAdapter() {
     else -> error("Invalid lane")
   }
 
-  private fun noteTextureKey(lane: Int) = when (lane) {
-    0 -> "note_green"
-    1 -> "note_red"
-    2 -> "note_yellow"
-    3 -> "note_blue"
-    4 -> "note_orange"
-    else -> error("Invalid lane: $lane")
-  }
-
   override fun dispose() {
     batch.dispose()
     Assets.dispose()
@@ -112,28 +130,61 @@ class GuitarFlashGame : ApplicationAdapter() {
 }
 
 object Assets {
-  private val textures = mutableMapOf<String, Texture>()
+
+  lateinit var track: Texture
+    private set
+
+  val defaultNotes = mutableMapOf<String, Texture>()
+  val starNotes = mutableMapOf<String, Texture>()
+
+  lateinit var buffedNote: Texture
+    private set
 
   fun load() {
-    // TODO: in the future load special notes PNGs and buffed notes PNGs also
-    loadTexture("track", "track.png")
 
-    loadTexture("note_green", "default_green.png")
-    loadTexture("note_red", "default_red.png")
-    loadTexture("note_yellow", "default_yellow.png")
-    loadTexture("note_blue", "default_blue.png")
-    loadTexture("note_orange", "default_orange.png")
+    track = load("track.png")
+
+    // ===== DEFAULT NOTES =====
+    loadDefault("green")
+    loadDefault("red")
+    loadDefault("yellow")
+    loadDefault("blue")
+    loadDefault("orange")
+
+    // ===== STAR NOTES =====
+    loadStar("green")
+    loadStar("red")
+    loadStar("yellow")
+    loadStar("blue")
+    loadStar("orange")
+
+    // ===== BUFFED NOTE =====
+    buffedNote = load("buffed_by_active_special_note.png")
   }
 
-  private fun loadTexture(key: String, path: String) {
-    textures[key] = Texture(Gdx.files.internal(path))
+  private fun loadDefault(color: String) {
+    defaultNotes[color] =
+      load("default_notes/default_$color.png")
   }
 
-  fun getTexture(key: String): Texture =
-    textures[key] ?: error("Texture not found: $key")
+  private fun loadStar(color: String) {
+    starNotes[color] =
+      load("star_notes/star_$color.png")
+  }
+
+  private fun load(path: String): Texture {
+    return Texture(Gdx.files.internal(path))
+  }
 
   fun dispose() {
-    textures.values.forEach(Texture::dispose)
-    textures.clear()
+    track.dispose()
+
+    defaultNotes.values.forEach { it.dispose() }
+    starNotes.values.forEach { it.dispose() }
+
+    buffedNote.dispose()
+
+    defaultNotes.clear()
+    starNotes.clear()
   }
 }
