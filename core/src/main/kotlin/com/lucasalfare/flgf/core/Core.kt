@@ -111,7 +111,7 @@ class GameEngine(
   private var nextIndex = 0
 
   /** Notes currently active and interactable. */
-  private val notesStates = mutableListOf<NoteState>()
+  val notesStates = mutableListOf<NoteState>()
 
   /** Public score state. */
   val score = ScoreState()
