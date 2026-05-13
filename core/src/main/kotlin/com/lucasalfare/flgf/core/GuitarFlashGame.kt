@@ -2,185 +2,447 @@ package com.lucasalfare.flgf.core
 
 import com.badlogic.gdx.ApplicationAdapter
 import com.badlogic.gdx.Gdx
+import com.badlogic.gdx.Input
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.GL20
+import com.badlogic.gdx.graphics.OrthographicCamera
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
+import com.badlogic.gdx.math.MathUtils
+import com.badlogic.gdx.utils.TimeUtils
+import com.badlogic.gdx.utils.viewport.FitViewport
 
 class GuitarFlashGame : ApplicationAdapter() {
-  private lateinit var batch: com.badlogic.gdx.graphics.g2d.SpriteBatch
+
+  private lateinit var camera: OrthographicCamera
+  private lateinit var viewport: FitViewport
+
   private lateinit var shapeRenderer: ShapeRenderer
+
+  private lateinit var layout: GameLayout
+
   private lateinit var laneRenderer: LaneRenderer
   private lateinit var hitSpotRenderer: HitSpotRenderer
   private lateinit var noteRenderer: NoteRenderer
+
+  private lateinit var engine: GameEngine
   private lateinit var inputHandler: InputHandler
 
+  private var startTime = 0L
+
   override fun create() {
-    batch = com.badlogic.gdx.graphics.g2d.SpriteBatch()
+
+    camera = OrthographicCamera()
+
+    viewport = FitViewport(
+      1920f,
+      2400f,
+      camera
+    )
+
+    viewport.apply()
+
     shapeRenderer = ShapeRenderer()
-    laneRenderer = LaneRenderer(shapeRenderer)
-    hitSpotRenderer = HitSpotRenderer(shapeRenderer)
-    noteRenderer = NoteRenderer(shapeRenderer)
+
+    createLayout()
+
+    laneRenderer = LaneRenderer(
+      shapeRenderer,
+      layout
+    )
+
+    hitSpotRenderer = HitSpotRenderer(
+      shapeRenderer,
+      layout
+    )
+
+    noteRenderer = NoteRenderer(
+      shapeRenderer,
+      layout
+    )
+
     inputHandler = InputHandler()
+
+    engine = GameEngine(
+      notes = generateFakeChart(),
+      hitWindow = 120
+    )
+
+    startTime = TimeUtils.millis()
+  }
+
+  private fun createLayout() {
+
+    layout = GameLayout(
+      viewport.worldWidth,
+      viewport.worldHeight
+    )
   }
 
   override fun render() {
-    Gdx.gl.glClearColor(0.1f, 0.1f, 0.15f, 1f)
+
+    Gdx.gl.glClearColor(
+      0.06f,
+      0.06f,
+      0.08f,
+      1f
+    )
+
     Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT)
 
-    // Update input and visual feedback
-    val playerInput = inputHandler.updateInput()
-    hitSpotRenderer.updatePressedFrets(playerInput.pressedFrets)
-    
-    // Update note positions
-    noteRenderer.updateNotes(System.currentTimeMillis())
+    camera.update()
 
-    shapeRenderer.begin(ShapeRenderer.ShapeType.Filled)
+    shapeRenderer.projectionMatrix =
+      camera.combined
+
+    val songTime =
+      TimeUtils.timeSinceMillis(startTime)
+
+    val input =
+      inputHandler.update()
+
+    engine.tick(
+      input,
+      songTime
+    )
+
+    shapeRenderer.begin(
+      ShapeRenderer.ShapeType.Filled
+    )
 
     laneRenderer.render()
-    noteRenderer.render()
+
+    noteRenderer.render(
+      engine.notesStates,
+      songTime
+    )
+
     hitSpotRenderer.render()
 
     shapeRenderer.end()
   }
 
+  override fun resize(
+    width: Int,
+    height: Int
+  ) {
+
+    viewport.update(
+      width,
+      height,
+      true
+    )
+
+    createLayout()
+
+    laneRenderer = LaneRenderer(
+      shapeRenderer,
+      layout
+    )
+
+    hitSpotRenderer = HitSpotRenderer(
+      shapeRenderer,
+      layout
+    )
+
+    noteRenderer = NoteRenderer(
+      shapeRenderer,
+      layout
+    )
+  }
+
   override fun dispose() {
+
     shapeRenderer.dispose()
-    batch.dispose()
+  }
+
+  private fun generateFakeChart(): List<Note> {
+
+    val notes = mutableListOf<Note>()
+
+    var time = 1000L
+
+    repeat(200) {
+
+      notes += Note(
+        hitTime = time,
+        lane = MathUtils.random(0, 4),
+        duration =
+          if (MathUtils.randomBoolean(0.15f))
+            1000L
+          else
+            0L,
+        isSpecial =
+          MathUtils.randomBoolean(0.1f)
+      )
+
+      time += 350L
+    }
+
+    return notes
   }
 }
 
-/**
- * Abstract interface for rendering components. Allows swapping between different rendering
- * strategies (shapes, textures, etc).
- */
+/* ========================================================= */
+/* ======================= LAYOUT ========================== */
+/* ========================================================= */
+
+class GameLayout(
+
+  screenWidth: Float,
+  screenHeight: Float
+) {
+
+  val highwayWidth =
+    screenWidth * 0.35f
+
+  val highwayHeight =
+    screenHeight * 0.9f
+
+  val highwayX =
+    (screenWidth - highwayWidth) / 2f
+
+  val highwayY = 80f
+
+  val laneCount = 5
+
+  val laneSpacing =
+    highwayWidth * 0.02f
+
+  val laneWidth =
+    (
+        highwayWidth -
+            laneSpacing * (laneCount - 1)
+        ) / laneCount
+
+  val hitLineY =
+    highwayY + 140f
+
+  val noteSize =
+    laneWidth * 0.6f
+
+  val scrollSpeed = 0.8f
+
+  fun laneX(index: Int): Float {
+
+    return highwayX +
+        index * (laneWidth + laneSpacing)
+  }
+
+  fun laneCenterX(index: Int): Float {
+
+    return laneX(index) + laneWidth / 2f
+  }
+}
+
+/* ========================================================= */
+/* ====================== RENDERERS ======================== */
+/* ========================================================= */
+
 interface Renderer {
+
   fun render()
 }
 
-/**
- * Responsible for rendering the 5 lanes of the guitar highway. Each lane is a vertical rectangle
- * where notes travel down.
- */
-class LaneRenderer(private val shapeRenderer: ShapeRenderer) : Renderer {
-  companion object {
-    const val LANE_COUNT = 5
-    const val LANE_WIDTH = 80f
-    const val LANE_HEIGHT = 800f
-    const val LANE_SPACING = 10f
-    const val START_X = 200f
-    const val START_Y = 50f
-  }
+class LaneRenderer(
+
+  private val shapeRenderer: ShapeRenderer,
+  private val layout: GameLayout
+) : Renderer {
 
   override fun render() {
-    shapeRenderer.color = Color.GRAY
 
-    for (i in 0 until LANE_COUNT) {
-      val x = START_X + i * (LANE_WIDTH + LANE_SPACING)
-      shapeRenderer.rect(x, START_Y, LANE_WIDTH, LANE_HEIGHT)
+    for (i in 0 until layout.laneCount) {
+
+      shapeRenderer.color =
+        if (i % 2 == 0)
+          Color(
+            0.15f,
+            0.15f,
+            0.17f,
+            1f
+          )
+        else
+          Color(
+            0.19f,
+            0.19f,
+            0.21f,
+            1f
+          )
+
+      shapeRenderer.rect(
+        layout.laneX(i),
+        layout.highwayY,
+        layout.laneWidth,
+        layout.highwayHeight
+      )
     }
   }
 }
 
-/**
- * Responsible for rendering the hit spots at the bottom of each lane. These are the target areas
- * where players need to hit the notes.
- */
-class HitSpotRenderer(private val shapeRenderer: ShapeRenderer) : Renderer {
-  companion object {
-    const val SPOT_SIZE = 60f
-    const val SPOT_Y = LaneRenderer.START_Y - 20f
-    const val PRESSED_SCALE = 0.8f
-    const val ANIMATION_SPEED = 0.15f
+class HitSpotRenderer(
+
+  private val shapeRenderer: ShapeRenderer,
+  private val layout: GameLayout
+) : Renderer {
+
+  override fun render() {
+
+    for (i in 0 until layout.laneCount) {
+
+      shapeRenderer.color =
+        laneColor(i)
+
+      shapeRenderer.circle(
+        layout.laneCenterX(i),
+        layout.hitLineY,
+        layout.noteSize * 0.55f
+      )
+    }
   }
+}
 
-  /** Current scale for each lane (0-4). Used for press animation */
-  private val scales = FloatArray(LaneRenderer.LANE_COUNT) { 1.0f }
+class NoteRenderer(
 
-  /**
-   * Updates the visual state based on which frets are currently pressed.
-   *
-   * @param pressedFrets Set of lane indices currently being pressed
-   */
-  fun updatePressedFrets(pressedFrets: Set<Int>) {
-    for (i in 0 until LaneRenderer.LANE_COUNT) {
-      if (i in pressedFrets) {
-        // Shrink when pressed
-        scales[i] = (scales[i] - ANIMATION_SPEED).coerceAtLeast(PRESSED_SCALE)
-      } else {
-        // Expand back to normal when released
-        scales[i] = (scales[i] + ANIMATION_SPEED).coerceAtMost(1.0f)
+  private val shapeRenderer: ShapeRenderer,
+  private val layout: GameLayout
+) {
+
+  fun render(
+    notes: List<NoteState>,
+    songTime: Long
+  ) {
+
+    notes.forEach { state ->
+
+      val note = state.note
+
+      val distanceMs =
+        note.hitTime - songTime
+
+      val y =
+        layout.hitLineY +
+            distanceMs * layout.scrollSpeed
+
+      if (
+        y < layout.highwayY - 300f ||
+        y > layout.highwayY + layout.highwayHeight + 300f
+      ) {
+        return@forEach
       }
-    }
-  }
 
-  override fun render() {
-    for (i in 0 until LaneRenderer.LANE_COUNT) {
-      val baseX =
-              LaneRenderer.START_X +
-                      i * (LaneRenderer.LANE_WIDTH + LaneRenderer.LANE_SPACING) +
-                      (LaneRenderer.LANE_WIDTH - SPOT_SIZE) / 2
+      val x =
+        layout.laneCenterX(note.lane) -
+            layout.noteSize / 2f
 
-      val scaledSize = SPOT_SIZE * scales[i]
-      val offset = (SPOT_SIZE - scaledSize) / 2
-      val x = baseX + offset
-      val y = SPOT_Y + offset
+      // Sustain body
 
-      // Change color based on scale (more orange when pressed)
-      val t = (1.0f - scales[i]) / (1.0f - PRESSED_SCALE)
-      shapeRenderer.color = Color.YELLOW.cpy().lerp(Color.ORANGE, t)
+      if (note.duration > 0) {
 
-      shapeRenderer.rect(x, y, scaledSize, scaledSize)
+        val sustainHeight =
+          note.duration * layout.scrollSpeed
+
+        shapeRenderer.color =
+          laneColor(note.lane).cpy().mul(
+            0.6f
+          )
+
+        shapeRenderer.rect(
+          x + layout.noteSize * 0.3f,
+          y,
+          layout.noteSize * 0.4f,
+          sustainHeight
+        )
+      }
+
+      // Note head
+
+      shapeRenderer.color =
+        when {
+
+          state.missed ->
+            Color.DARK_GRAY
+
+          note.isSpecial ->
+            Color.CYAN
+
+          else ->
+            laneColor(note.lane)
+        }
+
+      shapeRenderer.rect(
+        x,
+        y,
+        layout.noteSize,
+        layout.noteSize
+      )
     }
   }
 }
 
-/**
- * Responsible for rendering notes traveling down the lanes.
- * Notes start above the screen and travel down to the hit spots.
- */
-class NoteRenderer(private val shapeRenderer: ShapeRenderer) : Renderer {
-  companion object {
-    const val NOTE_SIZE = 50f
-    const val NOTE_SPEED = 200f // pixels per second
-    const val SPAWN_Y = LaneRenderer.START_Y + LaneRenderer.LANE_HEIGHT + 100f
-    const val DESPAWN_Y = LaneRenderer.START_Y - 100f
+/* ========================================================= */
+/* ==================== INPUT HANDLER ====================== */
+/* ========================================================= */
+
+class InputHandler {
+
+  private val previousPressed =
+    mutableSetOf<Int>()
+
+  fun update(): PlayerInput {
+
+    val pressed = mutableSetOf<Int>()
+
+    if (Gdx.input.isKeyPressed(Input.Keys.E))
+      pressed += 0
+
+    if (Gdx.input.isKeyPressed(Input.Keys.T))
+      pressed += 1
+
+    if (Gdx.input.isKeyPressed(Input.Keys.U))
+      pressed += 2
+
+    if (Gdx.input.isKeyPressed(Input.Keys.I))
+      pressed += 3
+
+    if (Gdx.input.isKeyPressed(Input.Keys.O))
+      pressed += 4
+
+    val justPressed =
+      pressed.filter {
+        it !in previousPressed
+      }.toSet()
+
+    previousPressed.clear()
+
+    previousPressed += pressed
+
+    return PlayerInput(
+      pressedFrets = pressed,
+      justPressedFrets = justPressed,
+      activateSpecial =
+        Gdx.input.isKeyJustPressed(
+          Input.Keys.SPACE
+        )
+    )
   }
+}
 
-  /** Test note for demonstration */
-  private val testNote = Note(time = 0, lane = 2, duration = 0, isSpecial = false)
-  private var noteStartTime: Long = 0
+/* ========================================================= */
+/* ======================= HELPERS ========================= */
+/* ========================================================= */
 
-  /**
-   * Updates note positions based on current song time.
-   * 
-   * @param currentTime Current song time in milliseconds
-   */
-  fun updateNotes(currentTime: Long) {
-    // Initialize start time on first update
-    if (noteStartTime == 0L) {
-      noteStartTime = currentTime
-    }
-  }
+private fun laneColor(index: Int): Color {
 
-  override fun render() {
-    // Calculate current Y position based on elapsed time
-    val currentTime = System.currentTimeMillis()
-    val elapsedMs = if (noteStartTime > 0) currentTime - noteStartTime else 0
-    val elapsedSeconds = elapsedMs / 1000f
-    
-    // Calculate Y position (moving down)
-    val currentY = SPAWN_Y - (elapsedSeconds * NOTE_SPEED)
-    
-    // Only render if note is visible
-    if (currentY >= DESPAWN_Y && currentY <= SPAWN_Y + NOTE_SIZE) {
-      val lane = testNote.lane
-      val x = LaneRenderer.START_X +
-              lane * (LaneRenderer.LANE_WIDTH + LaneRenderer.LANE_SPACING) +
-              (LaneRenderer.LANE_WIDTH - NOTE_SIZE) / 2
-      
-      // Render note as a colored rectangle
-      shapeRenderer.color = if (testNote.isSpecial) Color.PURPLE else Color.GREEN
-      shapeRenderer.rect(x, currentY, NOTE_SIZE, NOTE_SIZE)
-    }
+  return when (index) {
+
+    0 -> Color.GREEN
+
+    1 -> Color.RED
+
+    2 -> Color.YELLOW
+
+    3 -> Color.BLUE
+
+    else -> Color.ORANGE
   }
 }

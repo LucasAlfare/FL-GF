@@ -1,5 +1,5 @@
 plugins {
-  kotlin("jvm") version "2.1.0"
+  kotlin("jvm") version "2.3.21"
   application
 }
 
@@ -12,4 +12,8 @@ dependencies {
 
 application {
   mainClass.set("com.lucasalfare.flgf.desktop.DesktopLauncherKt")
+}
+
+kotlin {
+  jvmToolchain(21)
 }

@@ -1,5 +1,5 @@
 plugins {
-  kotlin("jvm") version "2.1.0"
+  kotlin("jvm") version "2.3.21"
 }
 
 group = "com.lucasalfare"
@@ -15,7 +15,7 @@ dependencies {
 }
 
 kotlin {
-  jvmToolchain(20)
+  jvmToolchain(21)
 }
 
 tasks.test {

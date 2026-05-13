@@ -179,7 +179,7 @@ class GameEngineTest {
     engine = GameEngine(notes, 100)
 
     notes.forEach {
-      engine.tick(pressOnce(0), it.time)
+      engine.tick(pressOnce(0), it.hitTime)
     }
 
     assertTrue(engine.score.multiplier >= 2)

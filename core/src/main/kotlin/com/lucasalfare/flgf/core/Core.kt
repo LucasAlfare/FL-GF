@@ -27,7 +27,7 @@ data class PlayerInput(
  *
  * Represents a note in the song chart.
  *
- * @property time Timestamp (in milliseconds) when the note should be hit.
+ * @property hitTime Timestamp (in milliseconds) when the note should be hit.
  *
  * @property lane Which lane/fret this note belongs to.
  *
@@ -35,7 +35,7 @@ data class PlayerInput(
  *
  * @property isSpecial Whether this note contributes to special energy sequences.
  */
-data class Note(val time: Long, val lane: Int, val duration: Long, val isSpecial: Boolean = false)
+data class Note(val hitTime: Long, val lane: Int, val duration: Long, val isSpecial: Boolean = false)
 
 /**
  *
@@ -122,6 +122,13 @@ class GameEngine(private val notes: List<Note>, private val hitWindow: Long) {
   /** Index of the next note to spawn from the chart. */
   private var nextIndex = 0
 
+  /**
+   * How early notes become visible/spawned.
+   *
+   * This is VISUAL timing, not gameplay hit timing.
+   */
+  private val spawnAheadTime = 3000L
+
   /** Notes currently active and interactable. */
   val notesStates = mutableListOf<NoteState>()
 
@@ -184,24 +191,16 @@ class GameEngine(private val notes: List<Note>, private val hitWindow: Long) {
    */
   private fun spawnNotes() {
 
-    while (nextIndex < notes.size && notes[nextIndex].time <= time + hitWindow) {
+    while (
+      nextIndex < notes.size &&
+      notes[nextIndex].hitTime <= time + spawnAheadTime
+    ) {
 
-      println(
-              "SPAWNING note: time=${notes[nextIndex].time}, engineTime=$time, nextIndex=$nextIndex"
+      notesStates.add(
+        NoteState(notes[nextIndex])
       )
-
-      notesStates.add(NoteState(notes[nextIndex]))
 
       nextIndex++
-    }
-
-    // Debug: show next note info
-
-    if (nextIndex < notes.size) {
-
-      println(
-              "Next note: time=${notes[nextIndex].time}, engineTime=$time, condition=${notes[nextIndex].time <= time + hitWindow}"
-      )
     }
   }
 
@@ -227,11 +226,11 @@ class GameEngine(private val notes: List<Note>, private val hitWindow: Long) {
 
     // Find the next note time (earliest)
 
-    val nextTime = pending.minOf { it.note.time }
+    val nextTime = pending.minOf { it.note.hitTime }
 
     // All notes at that exact time (chord/group)
 
-    val group = pending.filter { it.note.time == nextTime }
+    val group = pending.filter { it.note.hitTime == nextTime }
 
     val inWindow = abs(time - nextTime) <= hitWindow
 
@@ -319,7 +318,7 @@ class GameEngine(private val notes: List<Note>, private val hitWindow: Long) {
     // ===== MISS BY TIMEOUT =====
 
     group.forEach {
-      if (!it.hit && !it.missed && time > it.note.time + hitWindow) {
+      if (!it.hit && !it.missed && time > it.note.hitTime + hitWindow) {
 
         it.missed = true
 
@@ -526,7 +525,7 @@ class GameEngine(private val notes: List<Note>, private val hitWindow: Long) {
    */
   private fun cleanup() {
 
-    notesStates.removeIf { (it.missed || it.hit) && time > it.note.time + 1000 }
+    notesStates.removeIf { (it.missed || it.hit) && time > it.note.hitTime + 1000 }
   }
 }
 
@@ -660,7 +659,7 @@ object SongXmlParser {
     val (musicFileName, lengthMs) = parseProperties(root)
 
     return SongData(
-            notes = notes.sortedBy { it.time },
+            notes = notes.sortedBy { it.hitTime },
             musicFileName = musicFileName,
             lengthMs = lengthMs
     )
@@ -742,7 +741,7 @@ object SongXmlParser {
 
       result.add(
               Note(
-                      time = (timeSec * 1000).toLong(),
+                      hitTime = (timeSec * 1000).toLong(),
                       lane = lane,
                       duration = (durationSec * 1000).toLong(),
                       isSpecial = isSpecial

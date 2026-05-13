@@ -41,7 +41,7 @@ class SongIntegrationTest {
       val toPress = mutableSetOf<Int>()
 
       while (noteIndex < notes.size &&
-        kotlin.math.abs(notes[noteIndex].time - currentTime) <= 1
+        kotlin.math.abs(notes[noteIndex].hitTime - currentTime) <= 1
       ) {
         toPress.add(notes[noteIndex].lane)
         noteIndex++
@@ -79,7 +79,7 @@ class SongIntegrationTest {
       val toPress = mutableSetOf<Int>()
 
       while (noteIndex < notes.size &&
-        kotlin.math.abs(notes[noteIndex].time - currentTime) <= 1
+        kotlin.math.abs(notes[noteIndex].hitTime - currentTime) <= 1
       ) {
         toPress.add(notes[noteIndex].lane)
         noteIndex++
@@ -108,14 +108,14 @@ class SongIntegrationTest {
     val engine = GameEngine(song.notes, hitWindow = 100)
 
     var currentTime = 14000L
-    var noteIndex = song.notes.indexOfFirst { it.time >= 14000 }
+    var noteIndex = song.notes.indexOfFirst { it.hitTime >= 14000 }
 
     while (currentTime <= 16000) {
 
       val toPress = mutableSetOf<Int>()
 
       while (noteIndex < song.notes.size &&
-        kotlin.math.abs(song.notes[noteIndex].time - currentTime) <= 1
+        kotlin.math.abs(song.notes[noteIndex].hitTime - currentTime) <= 1
       ) {
         toPress.add(song.notes[noteIndex].lane)
         noteIndex++
