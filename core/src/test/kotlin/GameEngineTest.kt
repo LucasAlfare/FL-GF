@@ -77,7 +77,7 @@ class GameEngineTest {
   }
 
   @Test
-  fun `should hit chord correctly`() {
+  fun `should hit simultaneous notes independently`() {
     engine = engine(
       Note(1000, 0, 0),
       Note(1000, 1, 0)
@@ -85,31 +85,40 @@ class GameEngineTest {
 
     engine.tick(pressOnce(0, 1), 1000)
 
-    assertEquals(1, engine.score.combo)
+    assertEquals(2, engine.score.combo)
   }
 
   @Test
-  fun `should partially hit chord and fail combo`() {
+  fun `should allow hitting simultaneous notes one by one`() {
     engine = engine(
       Note(1000, 0, 0),
       Note(1000, 1, 0)
     )
 
     engine.tick(pressOnce(0), 1000)
+    assertEquals(1, engine.score.combo)
+    assertTrue(engine.notesStates.any { it.note.lane == 1 && !it.hit && !it.missed })
 
-    assertEquals(0, engine.score.combo)
+    engine.tick(pressOnce(1), 1050)
+
+    assertEquals(2, engine.score.combo)
   }
 
   @Test
-  fun `should partially hit chord with sustain`() {
+  fun `should keep sustain alive even if another simultaneous note is missed`() {
     engine = engine(
       Note(1000, 0, 2000),
       Note(1000, 1, 0)
     )
 
     engine.tick(pressOnce(0), 1000)
+    val afterHit = engine.score.score
+    assertEquals(1, engine.score.combo)
+
+    engine.tick(holdOnly(0), 1200)
 
     assertEquals(0, engine.score.combo)
+    assertTrue(engine.score.score > afterHit)
   }
 
   @Test

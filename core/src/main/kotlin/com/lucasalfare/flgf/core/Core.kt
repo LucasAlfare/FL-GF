@@ -117,7 +117,7 @@ data class SpecialState(
 class GameEngine(
   private val notes: List<Note>,
   private val hitWindow: Long,
-  private val spawnAheadTime: Long
+  private val spawnAheadTime: Long = 0L
 ) {
   private var time: Long = 0
   private var nextIndex = 0
@@ -131,7 +131,8 @@ class GameEngine(
     time = currentTime
     updateSpecial(input, dt)
     spawnNotes()
-    resolveNotes(input)
+    resolveMissedNotes()
+    resolveInputs(input)
     processSustain(input, dt)
     cleanup()
   }
@@ -143,61 +144,52 @@ class GameEngine(
     }
   }
 
-  private fun resolveNotes(input: PlayerInput) {
-    val pending = notesStates.filter { !it.hit && !it.missed }
-    if (pending.isEmpty()) return
+  private fun resolveMissedNotes() {
+    val missedNotes = notesStates
+      .filter { !it.hit && !it.missed && time > it.note.hitTime + hitWindow }
+      .sortedBy { it.note.hitTime }
 
-    val nextTime = pending.minOf { it.note.hitTime }
-    val group = pending.filter { it.note.hitTime == nextTime }
-    val inWindow = abs(time - nextTime) <= hitWindow
+    if (missedNotes.isEmpty()) return
 
-    if (inWindow && input.justPressedFrets.isNotEmpty()) {
-      val expected = group.map { it.note.lane }.toSet()
-      val pressed = input.justPressedFrets
-      val exact = expected == pressed
-      val partial = expected.intersect(pressed).isNotEmpty()
+    resetCombo()
+    missedNotes.forEach {
+      it.missed = true
+      onNoteMiss(it.note)
+    }
+  }
 
-      when {
-        exact -> {
-          addHit()
-          group.forEach {
-            it.hit = true
-            it.holding = it.note.duration > 0
-            onNoteHit(it.note)
-          }
-        }
+  private fun resolveInputs(input: PlayerInput) {
+    if (input.justPressedFrets.isEmpty()) return
 
-        partial -> {
-          resetCombo()
-          group.forEach {
-            if (it.note.lane in pressed) {
-              it.hit = true
-              it.holding = it.note.duration > 0
-              onNoteHit(it.note)
-            } else {
-              it.missed = true
-              onNoteMiss(it.note)
-            }
-          }
-        }
+    val hitNotes = mutableListOf<NoteState>()
+    var hasWrongInput = false
 
-        else -> {
-          resetCombo()
-          group.forEach {
-            it.missed = true
-            onNoteMiss(it.note)
-          }
-        }
+    input.justPressedFrets.sorted().forEach { lane ->
+      val noteState = findClosestPendingNoteForLane(lane)
+      if (noteState == null) {
+        hasWrongInput = true
+        return@forEach
       }
+
+      noteState.hit = true
+      noteState.holding = noteState.note.duration > 0
+      hitNotes += noteState
     }
 
-    group.forEach {
-      if (!it.hit && !it.missed && time > it.note.hitTime + hitWindow) {
-        it.missed = true
-        resetCombo()
-        onNoteMiss(it.note)
-      }
+    hitNotes.forEach {
+      addHit()
+      onNoteHit(it.note)
     }
+
+    if (hasWrongInput) resetCombo()
+  }
+
+  private fun findClosestPendingNoteForLane(lane: Int): NoteState? {
+    return notesStates
+      .asSequence()
+      .filter { !it.hit && !it.missed && it.note.lane == lane }
+      .filter { abs(time - it.note.hitTime) <= hitWindow }
+      .minWithOrNull(compareBy<NoteState>({ abs(time - it.note.hitTime) }, { it.note.hitTime }))
   }
 
   private fun onNoteHit(note: Note) {
@@ -284,11 +276,11 @@ should sustain long note and gain points progress
 
 should break points gained of sustaining if released early
 
-should hit chord correctly
+should hit simultaneous notes independently
 
-should partially hit chord and fail combo due to the not hit
+should allow hitting simultaneous notes one by one
 
-should partially hit chord with sustain and gain progress for the correct hit note and fail combo for not hit
+should keep sustain alive even if another simultaneous note is missed
 
 should handle rapid fire notes on same lane
 
