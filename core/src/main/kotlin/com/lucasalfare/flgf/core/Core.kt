@@ -18,9 +18,9 @@ import org.w3c.dom.Element
  * @property activateSpecial Whether the player is attempting to activate the special mode.
  */
 data class PlayerInput(
-        val pressedFrets: Set<Int>,
-        val justPressedFrets: Set<Int>,
-        val activateSpecial: Boolean = false
+  val pressedFrets: Set<Int>,
+  val justPressedFrets: Set<Int>,
+  val activateSpecial: Boolean = false
 )
 
 /**
@@ -35,7 +35,7 @@ data class PlayerInput(
  *
  * @property isSpecial Whether this note contributes to special energy sequences.
  */
-data class Note(val hitTime: Long, val lane: Int, val duration: Long, val isSpecial: Boolean = false)
+data class Note(val hitTime: Long, val lane: Int, val duration: Long = 0L, val isSpecial: Boolean = false)
 
 /**
  *
@@ -54,11 +54,11 @@ data class Note(val hitTime: Long, val lane: Int, val duration: Long, val isSpec
  * @property sustainProgress How much of the sustain duration has been completed.
  */
 data class NoteState(
-        val note: Note,
-        var hit: Boolean = false,
-        var missed: Boolean = false,
-        var holding: Boolean = false,
-        var sustainProgress: Double = 0.0
+  val note: Note,
+  var hit: Boolean = false,
+  var missed: Boolean = false,
+  var holding: Boolean = false,
+  var sustainProgress: Double = 0.0
 )
 
 /**
@@ -86,10 +86,10 @@ data class ScoreState(var score: Int = 0, var combo: Int = 0, var multiplier: In
  * @property sequenceBroken Whether the current sequence has been invalidated.
  */
 data class SpecialState(
-        var energy: Int = 0,
-        var active: Boolean = false,
-        var inSequence: Boolean = false,
-        var sequenceBroken: Boolean = false
+  var energy: Int = 0,
+  var active: Boolean = false,
+  var inSequence: Boolean = false,
+  var sequenceBroken: Boolean = false
 )
 
 // ==================== GAME ENGINE ====================
@@ -114,417 +114,162 @@ data class SpecialState(
  *
  * @param hitWindow Allowed timing error (in milliseconds) for hitting notes.
  */
-class GameEngine(private val notes: List<Note>, private val hitWindow: Long) {
-
-  /** Current engine time (ms). */
+class GameEngine(
+  private val notes: List<Note>,
+  private val hitWindow: Long,
+  private val spawnAheadTime: Long
+) {
   private var time: Long = 0
-
-  /** Index of the next note to spawn from the chart. */
   private var nextIndex = 0
 
-  /**
-   * How early notes become visible/spawned.
-   *
-   * This is VISUAL timing, not gameplay hit timing.
-   */
-  private val spawnAheadTime = 3000L
-
-  /** Notes currently active and interactable. */
   val notesStates = mutableListOf<NoteState>()
-
-  /** Public score state. */
   val score = ScoreState()
-
-  /** Public special ability state. */
   val special = SpecialState()
 
-  /**
-   *
-   * Main update loop.
-   *
-   * Called every frame with current input and time.
-   *
-   * Execution order is critical:
-   *
-   * 1. Update special (time-dependent drain/activation)
-   *
-   * 2. Spawn notes (based on time window)
-   *
-   * 3. Resolve hits/misses
-   *
-   * 4. Process sustain scoring
-   *
-   * 5. Cleanup old notes
-   *
-   * @param input Player input snapshot for this frame.
-   *
-   * @param currentTime Absolute time in milliseconds.
-   */
   fun tick(input: PlayerInput, currentTime: Long) {
-
     val dt = currentTime - time
-
     time = currentTime
-
     updateSpecial(input, dt)
-
     spawnNotes()
-
     resolveNotes(input)
-
     processSustain(input, dt)
-
     cleanup()
   }
 
-  // ==================== SPAWN ====================
-
-  /**
-   *
-   * Moves notes from the chart into the active list when they are
-   *
-   * close enough to be hittable.
-   *
-   * Notes are spawned slightly early (time + hitWindow) so the player
-   *
-   * can interact with them within the allowed timing window.
-   */
   private fun spawnNotes() {
-
-    while (
-      nextIndex < notes.size &&
-      notes[nextIndex].hitTime <= time + spawnAheadTime
-    ) {
-
-      notesStates.add(
-        NoteState(notes[nextIndex])
-      )
-
+    while (nextIndex < notes.size && notes[nextIndex].hitTime <= time + spawnAheadTime) {
+      notesStates.add(NoteState(notes[nextIndex]))
       nextIndex++
     }
   }
 
-  // ==================== CORE HIT RESOLUTION ====================
-
-  /**
-   *
-   * Resolves player input against the next group of notes.
-   *
-   * Design decisions:
-   *
-   * - Only the earliest pending note group is evaluated.
-   *
-   * - Notes with identical timestamps are treated as a chord.
-   *
-   * - Input is matched against the entire chord, not individual notes.
-   */
   private fun resolveNotes(input: PlayerInput) {
-
     val pending = notesStates.filter { !it.hit && !it.missed }
-
     if (pending.isEmpty()) return
 
-    // Find the next note time (earliest)
-
     val nextTime = pending.minOf { it.note.hitTime }
-
-    // All notes at that exact time (chord/group)
-
     val group = pending.filter { it.note.hitTime == nextTime }
-
     val inWindow = abs(time - nextTime) <= hitWindow
 
-    // ===== HIT LOGIC =====
-
     if (inWindow && input.justPressedFrets.isNotEmpty()) {
-
       val expected = group.map { it.note.lane }.toSet()
-
       val pressed = input.justPressedFrets
-
       val exact = expected == pressed
-
       val partial = expected.intersect(pressed).isNotEmpty()
 
       when {
-
-        /**
-         *
-         * Perfect match:
-         *
-         * Player pressed exactly the required frets for the chord.
-         */
         exact -> {
-
           addHit()
-
           group.forEach {
             it.hit = true
-
             it.holding = it.note.duration > 0
-
             onNoteHit(it.note)
           }
         }
 
-        /**
-         *
-         * Partial match:
-         *
-         * Some correct frets were pressed, but not all.
-         *
-         * This breaks combo and splits result into hit/miss per note.
-         */
         partial -> {
-
           resetCombo()
-
           group.forEach {
             if (it.note.lane in pressed) {
-
               it.hit = true
-
               it.holding = it.note.duration > 0
-
               onNoteHit(it.note)
             } else {
-
               it.missed = true
-
               onNoteMiss(it.note)
             }
           }
         }
 
-        /**
-         *
-         * Completely incorrect input:
-         *
-         * No overlap between expected and pressed frets.
-         */
         else -> {
-
           resetCombo()
-
           group.forEach {
             it.missed = true
-
             onNoteMiss(it.note)
           }
         }
       }
     }
 
-    // ===== MISS BY TIMEOUT =====
-
     group.forEach {
       if (!it.hit && !it.missed && time > it.note.hitTime + hitWindow) {
-
         it.missed = true
-
         resetCombo()
-
         onNoteMiss(it.note)
       }
     }
   }
 
-  // ==================== SPECIAL SYSTEM ====================
-
-  /**
-   *
-   * Handles logic when a note is successfully hit.
-   *
-   * Special rules:
-   *
-   * - Special notes start or continue a sequence.
-   *
-   * - A sequence ends when a non-special note is hit.
-   *
-   * - If the sequence was not broken, energy is awarded.
-   */
   private fun onNoteHit(note: Note) {
-
     if (special.active) return
-
     if (note.isSpecial) {
-
       if (!special.inSequence) {
-
         special.inSequence = true
-
         special.sequenceBroken = false
       }
     } else {
-
-      // End of sequence
-
       if (special.inSequence && !special.sequenceBroken) {
-
         special.energy = (special.energy + 25).coerceAtMost(100)
       }
-
       special.inSequence = false
-
       special.sequenceBroken = false
     }
+
+    println("Current combo: ${score.combo}")
   }
 
-  /**
-   *
-   * Handles logic when a note is missed.
-   *
-   * Missing a special note breaks the current sequence.
-   */
   private fun onNoteMiss(note: Note) {
-
-    if (note.isSpecial) {
-
-      special.sequenceBroken = true
-    }
+    if (note.isSpecial) special.sequenceBroken = true
   }
 
-  /**
-   *
-   * Updates special mode state.
-   *
-   * - Activates if player requests and enough energy is available.
-   *
-   * - Drains energy over time while active.
-   *
-   * - Disables energy gain while active.
-   */
   private fun updateSpecial(input: PlayerInput, dt: Long) {
-
-    if (input.activateSpecial && special.energy >= 50) {
-
-      special.active = true
-    }
-
+    if (input.activateSpecial && special.energy >= 50) special.active = true
     if (special.active) {
-
       special.energy -= (25 * (dt / 1000.0)).toInt()
-
       if (special.energy <= 0) {
-
         special.energy = 0
-
         special.active = false
       }
-
-      // Disable sequence tracking while active
-
       special.inSequence = false
-
       special.sequenceBroken = false
     }
   }
 
-  /**
-   *
-   * Returns the multiplier applied by special mode.
-   */
   private fun specialMultiplier() = if (special.active) 2 else 1
 
-  // ==================== SUSTAIN SYSTEM ====================
-
-  /**
-   *
-   * Processes sustain (hold) notes.
-   *
-   * Sustain scoring:
-   *
-   * - Continuous score gain over time while holding correctly.
-   *
-   * - Scaled by combo multiplier and special multiplier.
-   *
-   * - Stops if player releases the fret early.
-   */
   private fun processSustain(input: PlayerInput, dt: Long) {
-
     val sustainRatePerSecond = 50.0
-
     notesStates.forEach {
       if (!it.holding) return@forEach
-
-      val holding = it.note.lane in input.pressedFrets
-
-      if (!holding) {
-
+      if (it.note.lane !in input.pressedFrets) {
         it.holding = false
-
         return@forEach
       }
-
       val remaining = it.note.duration - it.sustainProgress
-
       val delta = minOf(dt.toDouble(), remaining)
-
-      val gained =
-              (delta / 1000.0 * sustainRatePerSecond * score.multiplier * specialMultiplier())
-                      .toInt()
-
-      score.score += gained
-
+      score.score += (delta / 1000.0 * sustainRatePerSecond * score.multiplier * specialMultiplier()).toInt()
       it.sustainProgress += delta
-
-      if (it.sustainProgress >= it.note.duration) {
-
-        it.holding = false
-      }
+      if (it.sustainProgress >= it.note.duration) it.holding = false
     }
   }
 
-  // ==================== SCORE SYSTEM ====================
-
-  /**
-   *
-   * Called on a successful full hit.
-   *
-   * - Increases combo
-   *
-   * - Updates multiplier thresholds
-   *
-   * - Adds base score scaled by multipliers
-   */
   private fun addHit() {
-
     score.combo++
-
-    score.multiplier =
-            when {
-              score.combo >= 30 -> 4
-              score.combo >= 20 -> 3
-              score.combo >= 10 -> 2
-              else -> 1
-            }
-
+    score.multiplier = when {
+      score.combo >= 30 -> 4
+      score.combo >= 20 -> 3
+      score.combo >= 10 -> 2
+      else -> 1
+    }
     score.score += 50 * score.multiplier * specialMultiplier()
   }
 
-  /**
-   *
-   * Resets combo and multiplier.
-   */
   private fun resetCombo() {
-
     score.combo = 0
-
     score.multiplier = 1
   }
 
-  // ==================== CLEANUP ====================
-
-  /**
-   *
-   * Removes old notes from memory after they are no longer relevant.
-   *
-   * Notes are kept briefly after being missed to allow visual feedback,
-   *
-   * then discarded after a fixed delay (1000 ms).
-   */
   private fun cleanup() {
-
     notesStates.removeIf { (it.missed || it.hit) && time > it.note.hitTime + 1000 }
   }
 }
@@ -659,9 +404,9 @@ object SongXmlParser {
     val (musicFileName, lengthMs) = parseProperties(root)
 
     return SongData(
-            notes = notes.sortedBy { it.hitTime },
-            musicFileName = musicFileName,
-            lengthMs = lengthMs
+      notes = notes.sortedBy { it.hitTime },
+      musicFileName = musicFileName,
+      lengthMs = lengthMs
     )
   }
 
@@ -740,12 +485,12 @@ object SongXmlParser {
       val isSpecial = node.getAttribute("special") == "1"
 
       result.add(
-              Note(
-                      hitTime = (timeSec * 1000).toLong(),
-                      lane = lane,
-                      duration = (durationSec * 1000).toLong(),
-                      isSpecial = isSpecial
-              )
+        Note(
+          hitTime = (timeSec * 1000).toLong(),
+          lane = lane,
+          duration = (durationSec * 1000).toLong(),
+          isSpecial = isSpecial
+        )
       )
     }
 
