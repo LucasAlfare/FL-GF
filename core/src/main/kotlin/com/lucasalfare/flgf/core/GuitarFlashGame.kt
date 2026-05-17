@@ -269,7 +269,8 @@ class GuitarFlashGame : ApplicationAdapter() {
     )
     var lastTime = 6000
     repeat(100) {
-      val nextTime = Random.nextInt(lastTime, lastTime + 400)
+      var nextTime = Random.nextInt(lastTime, lastTime + 300)
+      if (nextTime - lastTime < 100) nextTime += 100
       notes += Note(hitTime = nextTime.toLong(), lane = Random.nextInt(5))
       lastTime = nextTime
     }
