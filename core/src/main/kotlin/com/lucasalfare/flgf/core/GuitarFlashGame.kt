@@ -11,10 +11,8 @@ import com.badlogic.gdx.utils.TimeUtils
 import com.badlogic.gdx.utils.viewport.FitViewport
 import kotlin.random.Random
 
-// ==================== CONFIG ====================
-
 /**
- * Tudo em unidades de mundo. O mundo vai de (0,0) até (1,1).
+ * Tudo em unidades de mundo. O mundo vai de (0,0) até (1,1)? Tentei deixar o viewport em 1:2.
  *
  * @property noteSpeedPerMs  Velocidade das notas — fração do mundo por milissegundo.
  * @property trackHeight     Altura visível da pista em unidades de mundo.
@@ -34,8 +32,6 @@ data class GameConfig(
   val spawnAheadTime: Long
     get() = (trackHeight / noteSpeedPerMs).toLong()
 }
-
-// ==================== TRACK RENDERER ====================
 
 /**
  * Desenha a pista: fundo e divisórias entre lanes.
@@ -61,11 +57,8 @@ class TrackRenderer(
   }
 }
 
-// ==================== HIT SPOT RENDERER ====================
-
 /**
  * Desenha os spots fixos na hit line — os alvos onde a nota deve ser pressionada.
- * A altura do spot reflete honestamente a janela de acerto em ms.
  */
 class HitSpotRenderer(
   private val config: GameConfig,
@@ -79,7 +72,6 @@ class HitSpotRenderer(
     Color(0.7f, 0.2f, 0.9f, 1f),
   )
 
-  // Altura visual honesta: equivale exatamente à janela de acerto no mundo
   private val spotHeight: Float
     get() = 0.15f
 
@@ -95,8 +87,6 @@ class HitSpotRenderer(
     }
   }
 }
-
-// ==================== NOTE RENDERER ====================
 
 /**
  * Desenha as notas em movimento.
@@ -138,8 +128,6 @@ class NoteRenderer(
   }
 }
 
-// ==================== LANE LAYOUT ====================
-
 /**
  * Centraliza toda a matemática de posicionamento das lanes.
  * Qualquer renderer que precise saber onde uma lane está usa isso.
@@ -160,7 +148,31 @@ data class LaneLayout(
   fun xForLane(lane: Int): Float = trackStartX + lane * laneWidth
 }
 
-// ==================== GAME ====================
+// isso aqui está "overegeneering"? se estiver, quero deixar trivial ou mais performático, como um array de booleans pra
+// marcar os inputs que foram pressed etc. adapte a lógica se necessário.
+object InputHandler {
+  private val previousPressed = mutableSetOf<Int>()
+
+  fun update(): PlayerInput {
+    val pressed = mutableSetOf<Int>()
+
+    if (Gdx.input.isKeyPressed(Input.Keys.E)) pressed += 0
+    if (Gdx.input.isKeyPressed(Input.Keys.T)) pressed += 1
+    if (Gdx.input.isKeyPressed(Input.Keys.U)) pressed += 2
+    if (Gdx.input.isKeyPressed(Input.Keys.I)) pressed += 3
+    if (Gdx.input.isKeyPressed(Input.Keys.O)) pressed += 4
+
+    val justPressed = pressed.filter { it !in previousPressed }.toSet()
+    previousPressed.clear()
+    previousPressed += pressed
+
+    return PlayerInput(
+      pressedFrets = pressed,
+      justPressedFrets = justPressed,
+      activateSpecial = Gdx.input.isKeyJustPressed(Input.Keys.SPACE)
+    )
+  }
+}
 
 class GuitarFlashGame : ApplicationAdapter() {
 
@@ -195,7 +207,7 @@ class GuitarFlashGame : ApplicationAdapter() {
       Note(hitTime = 2000L, lane = 2), Note(hitTime = 2000L, lane = 3),
       Note(hitTime = 3000L, lane = 2), Note(hitTime = 3000L, lane = 3),
     )
-    var lastTime = 10000
+    var lastTime = 6000
     repeat(100) {
       val nextTime = Random.nextInt(lastTime, lastTime + 1000)
       notes += Note(hitTime = nextTime.toLong(), lane = Random.nextInt(5))
@@ -235,31 +247,5 @@ class GuitarFlashGame : ApplicationAdapter() {
 
   override fun dispose() {
     shapeRenderer.dispose()
-  }
-}
-
-// ==================== INPUT HANDLER ====================
-
-object InputHandler {
-  private val previousPressed = mutableSetOf<Int>()
-
-  fun update(): PlayerInput {
-    val pressed = mutableSetOf<Int>()
-
-    if (Gdx.input.isKeyPressed(Input.Keys.E)) pressed += 0
-    if (Gdx.input.isKeyPressed(Input.Keys.T)) pressed += 1
-    if (Gdx.input.isKeyPressed(Input.Keys.U)) pressed += 2
-    if (Gdx.input.isKeyPressed(Input.Keys.I)) pressed += 3
-    if (Gdx.input.isKeyPressed(Input.Keys.O)) pressed += 4
-
-    val justPressed = pressed.filter { it !in previousPressed }.toSet()
-    previousPressed.clear()
-    previousPressed += pressed
-
-    return PlayerInput(
-      pressedFrets = pressed,
-      justPressedFrets = justPressed,
-      activateSpecial = Gdx.input.isKeyJustPressed(Input.Keys.SPACE)
-    )
   }
 }
