@@ -9,121 +9,131 @@ import com.badlogic.gdx.graphics.OrthographicCamera
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.utils.TimeUtils
 import com.badlogic.gdx.utils.viewport.FitViewport
+import kotlin.math.max
 import kotlin.random.Random
 
 /**
- * Tudo em unidades de mundo. O mundo vai de (0,0) até (1,1)? Tentei deixar o viewport em 1:2.
- *
- * @property noteSpeedPerMs  Velocidade das notas — fração do mundo por milissegundo.
- * @property trackHeight     Altura visível da pista em unidades de mundo.
- * @property hitLineY        Posição Y da linha de acerto em unidades de mundo.
- * @property hitWindow       Janela de acerto em milissegundos.
+ * World-space config for the prototype UI.
+ * The playfield is centered inside the viewport and all renderers read from the same geometry.
  */
 data class GameConfig(
-  val noteSpeedPerMs: Float = 0.001975f, // velocidade expert?
-  val trackHeight: Float = 1.8f, // altura do tal "mundo"?
-  val hitLineY: Float = 0.15f,
+  val noteSpeedPerMs: Float = 0.001975f,
+  val playfieldWidth: Float = 0.72f,
+  val playfieldHeight: Float = 2f,
+  val playfieldCenterX: Float = 0.5f,
+  val playfieldCenterY: Float = 1.0f,
+  val hitLineInsetFromBottom: Float = 0.14f,
   val hitWindow: Long = 100L
 ) {
+  val trackTravelHeight: Float
+    get() = max(0f, playfieldHeight - hitLineInsetFromBottom)
+
   /**
-   * Quantos ms uma nota leva pra percorrer toda a pista.
-   * Derivado de velocidade e espaço — a engine não precisa saber de nada disso.
+   * Time it takes a note to travel from the top of the visible lane area to the hit line.
    */
   val spawnAheadTime: Long
-    get() = (trackHeight / noteSpeedPerMs).toLong()
+    get() = (trackTravelHeight / noteSpeedPerMs).toLong()
+}
+
+/**
+ * Single source of truth for playfield geometry.
+ * Track background, hit spots and notes all use these same bounds.
+ */
+class PlayfieldLayout(
+  private val config: GameConfig,
+  val laneCount: Int = 5,
+  val laneGap: Float = 0.004f,
+  val spotHeight: Float = 0.15f,
+  val noteHeight: Float = 0.1f,
+  val sustainBodyWidthRatio: Float = 0.32f
+) {
+  val left: Float
+    get() = config.playfieldCenterX - config.playfieldWidth / 2f
+
+  val bottom: Float
+    get() = config.playfieldCenterY - config.playfieldHeight / 2f
+
+  val width: Float
+    get() = config.playfieldWidth
+
+  val height: Float
+    get() = config.playfieldHeight
+
+  val top: Float
+    get() = bottom + height
+
+  val hitLineY: Float
+    get() = bottom + config.hitLineInsetFromBottom
+
+  val laneWidth: Float
+    get() = width / laneCount
+
+  val noteSpeedPerMs: Float
+    get() = config.noteSpeedPerMs
+
+  fun xForLane(lane: Int): Float = left + lane * laneWidth
 }
 
 private object LanePalette {
   private val colors = listOf(
-    Color(0.2f, 0.8f, 0.2f, 1f), // green
-    Color(0.8f, 0.2f, 0.2f, 1f), // red
-    Color(0.9f, 0.8f, 0.1f, 1f), // yellow
-    Color(0.2f, 0.2f, 0.9f, 1f), // blue
-    Color(0.95f, 0.5f, 0.15f, 1f), // orange
+    Color(0.2f, 0.8f, 0.2f, 1f),
+    Color(0.8f, 0.2f, 0.2f, 1f),
+    Color(0.9f, 0.8f, 0.1f, 1f),
+    Color(0.2f, 0.2f, 0.9f, 1f),
+    Color(0.95f, 0.5f, 0.15f, 1f),
   )
 
   fun colorForLane(lane: Int): Color = colors.getOrElse(lane) { Color(0.7f, 0.7f, 0.7f, 1f) }
 }
 
 /**
- * Centraliza toda a matemática de posicionamento das lanes.
- * Qualquer renderer que precise saber onde uma lane está usa isso.
- *
- * @param trackStartX  X onde a pista começa (unidades de mundo).
- * @param trackWidth   Largura total da pista (unidades de mundo).
- * @param laneCount    Número de lanes.
- * @param laneGap      Espaço entre lanes (unidades de mundo).
- */
-data class LaneLayout(
-  val trackStartX: Float = 0.1f,
-  val trackWidth: Float = 0.8f,
-  val laneCount: Int = 5,
-  val laneGap: Float = 0.004f
-) {
-  val laneWidth: Float get() = trackWidth / laneCount
-
-  fun xForLane(lane: Int): Float = trackStartX + lane * laneWidth
-}
-
-/**
- * Desenha a pista: fundo e divisórias entre lanes.
+ * Draws the track background and the lane separators.
  */
 class TrackRenderer(
-  private val config: GameConfig,
-  private val laneLayout: LaneLayout
+  private val layout: PlayfieldLayout
 ) {
   fun draw(shapeRenderer: ShapeRenderer) {
     shapeRenderer.color = Color(0.12f, 0.12f, 0.15f, 1f)
     shapeRenderer.rect(
-      laneLayout.trackStartX,
-      config.hitLineY,
-      laneLayout.trackWidth,
-      config.trackHeight
+      layout.left,
+      layout.bottom,
+      layout.width,
+      layout.height
     )
 
     shapeRenderer.color = Color(0.3f, 0.3f, 0.35f, 1f)
-    for (i in 1 until laneLayout.laneCount) {
-      val x = laneLayout.trackStartX + i * laneLayout.laneWidth
-      shapeRenderer.rect(x, config.hitLineY, 0.002f, config.trackHeight)
+    for (i in 1 until layout.laneCount) {
+      val x = layout.left + i * layout.laneWidth
+      shapeRenderer.rect(x, layout.bottom, 0.002f, layout.height)
     }
   }
 }
 
 /**
- * Desenha os spots fixos na hit line — os alvos onde a nota deve ser pressionada.
+ * Draws the fixed hit spots on the hit line.
  */
 class HitSpotRenderer(
-  private val config: GameConfig,
-  private val laneLayout: LaneLayout
+  private val layout: PlayfieldLayout
 ) {
-  private val spotHeight: Float
-    get() = 0.15f
-
   fun draw(shapeRenderer: ShapeRenderer) {
-    for (lane in 0 until laneLayout.laneCount) {
+    for (lane in 0 until layout.laneCount) {
       shapeRenderer.color = LanePalette.colorForLane(lane)
       shapeRenderer.rect(
-        laneLayout.xForLane(lane),
-        config.hitLineY - spotHeight / 2f,
-        laneLayout.laneWidth - laneLayout.laneGap,
-        spotHeight
+        layout.xForLane(lane),
+        layout.hitLineY - layout.spotHeight / 2f,
+        layout.laneWidth - layout.laneGap,
+        layout.spotHeight
       )
     }
   }
 }
 
 /**
- * Desenha as notas em movimento.
- * Recebe os dados da engine como parâmetros — não acessa a engine diretamente.
+ * Draws the moving notes.
  */
 class NoteRenderer(
-  private val config: GameConfig,
-  private val laneLayout: LaneLayout
+  private val layout: PlayfieldLayout
 ) {
-  private val noteHeight: Float
-    get() = 0.1f
-  private val sustainBodyWidthRatio = 0.32f
-
   private val colorInactive = Color(0.55f, 0.55f, 0.58f, 1f)
   private val colorBrokenBody = Color(0.55f, 0.55f, 0.58f, 0.25f)
 
@@ -131,15 +141,15 @@ class NoteRenderer(
     noteStates.forEach { state ->
       val headY = yForTime(state.note.hitTime, songTime)
       val bodyTopY = yForTime(state.note.hitTime + state.note.duration, songTime)
-      val visibleBottom = config.hitLineY - noteHeight
-      val visibleTop = config.hitLineY + config.trackHeight
-      val noteTopY = maxOf(headY + noteHeight, bodyTopY)
+      val visibleBottom = layout.hitLineY - layout.noteHeight
+      val visibleTop = layout.top
+      val noteTopY = max(headY + layout.noteHeight, bodyTopY)
 
       if (noteTopY < visibleBottom || headY > visibleTop) {
         return@forEach
       }
 
-      // Draw the sustain body first so the note head sits on top of it.
+      // Draw the sustain body first so the note head sits on top.
       drawSustainBody(shapeRenderer, state, headY, bodyTopY)
       drawHead(shapeRenderer, state, headY)
     }
@@ -147,7 +157,7 @@ class NoteRenderer(
 
   private fun yForTime(noteTime: Long, songTime: Long): Float {
     val distanceMs = noteTime - songTime
-    return config.hitLineY + distanceMs * config.noteSpeedPerMs
+    return layout.hitLineY + distanceMs * layout.noteSpeedPerMs
   }
 
   private fun drawHead(shapeRenderer: ShapeRenderer, state: NoteState, headY: Float) {
@@ -160,10 +170,10 @@ class NoteRenderer(
     }
 
     shapeRenderer.rect(
-      laneLayout.xForLane(state.note.lane),
+      layout.xForLane(state.note.lane),
       headY,
-      laneLayout.laneWidth - laneLayout.laneGap,
-      noteHeight
+      layout.laneWidth - layout.laneGap,
+      layout.noteHeight
     )
   }
 
@@ -176,18 +186,18 @@ class NoteRenderer(
     if (state.note.duration <= 0L) return
     if (state.hit && !state.sustainBroken && state.sustainProgress >= state.note.duration) return
 
-    val rawBodyStartY = headY + noteHeight
+    val rawBodyStartY = headY + layout.noteHeight
     val bodyStartY = if (state.hit && !state.sustainBroken && state.holding) {
-      maxOf(rawBodyStartY, config.hitLineY)
+      max(rawBodyStartY, layout.hitLineY)
     } else {
       rawBodyStartY
     }
     val bodyHeight = bodyTopY - bodyStartY
     if (bodyHeight <= 0f) return
 
-    val laneX = laneLayout.xForLane(state.note.lane)
-    val laneWidth = laneLayout.laneWidth - laneLayout.laneGap
-    val sustainWidth = laneWidth * sustainBodyWidthRatio
+    val laneX = layout.xForLane(state.note.lane)
+    val laneWidth = layout.laneWidth - layout.laneGap
+    val sustainWidth = laneWidth * layout.sustainBodyWidthRatio
     val sustainX = laneX + (laneWidth - sustainWidth) / 2f
 
     shapeRenderer.color = when {
@@ -200,8 +210,7 @@ class NoteRenderer(
   }
 }
 
-// isso aqui está "overegeneering"? se estiver, quero deixar trivial ou mais performático, como um array de booleans pra
-// marcar os inputs que foram pressed etc. adapte a lógica se necessário.
+// This input helper can stay simple for now.
 object InputHandler {
   private val laneKeys = intArrayOf(
     Input.Keys.E,
@@ -243,7 +252,7 @@ class GuitarFlashGame : ApplicationAdapter() {
   private lateinit var engine: GameEngine
 
   private val config = GameConfig()
-  private val laneLayout = LaneLayout()
+  private val layout = PlayfieldLayout(config)
 
   private lateinit var trackRenderer: TrackRenderer
   private lateinit var hitSpotRenderer: HitSpotRenderer
@@ -256,18 +265,13 @@ class GuitarFlashGame : ApplicationAdapter() {
 
     shapeRenderer = ShapeRenderer()
 
-    trackRenderer = TrackRenderer(config, laneLayout)
-    hitSpotRenderer = HitSpotRenderer(config, laneLayout)
-    noteRenderer = NoteRenderer(config, laneLayout)
+    trackRenderer = TrackRenderer(layout)
+    hitSpotRenderer = HitSpotRenderer(layout)
+    noteRenderer = NoteRenderer(layout)
 
-    // notas fake pra testar, quero pegar do "resources/aux_song.xml" depois
-    val notes = mutableListOf(
-      Note(hitTime = 1000L, lane = 0, duration = 2000),
-      //Note(hitTime = 1000L, lane = 4),
-//      Note(hitTime = 2000L, lane = 2), Note(hitTime = 2000L, lane = 3),
-//      Note(hitTime = 3000L, lane = 2), Note(hitTime = 3000L, lane = 3),
-    )
-    var lastTime = 6000
+    // Fake notes for now; we'll switch to resources/aux_song.xml later.
+    val notes = mutableListOf(Note(hitTime = 1000L, lane = 0, duration = 2000))
+    var lastTime = 3000
     repeat(100) {
       var nextTime = Random.nextInt(lastTime, lastTime + 300)
       if (nextTime - lastTime < 100) nextTime += 100
