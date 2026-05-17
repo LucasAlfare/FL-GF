@@ -27,6 +27,13 @@ class GameEngineTest {
       justPressedFrets = emptySet()
     )
 
+  private fun release(vararg lanes: Int) =
+    PlayerInput(
+      pressedFrets = emptySet(),
+      justPressedFrets = emptySet(),
+      justReleasedFrets = lanes.toSet()
+    )
+
 // --------------------------
 // TESTS
 // --------------------------
@@ -71,9 +78,29 @@ class GameEngineTest {
 
     val mid = engine.score.score
 
-    engine.tick(holdOnly(), 2000)
+    engine.tick(release(0), 1600)
 
     assertEquals(mid, engine.score.score)
+    assertTrue(engine.notesStates.first().sustainBroken)
+    assertEquals(1, engine.score.combo)
+  }
+
+  @Test
+  fun `should keep long sustain note alive until the tail is gone`() {
+    engine = engine(Note(1000, 0, 2000))
+
+    engine.tick(pressOnce(0), 1000)
+    engine.tick(holdOnly(0), 2500)
+
+    assertTrue(engine.notesStates.any { it.note.duration == 2000L })
+
+    engine.tick(holdOnly(0), 3500)
+
+    assertTrue(engine.notesStates.any { it.note.duration == 2000L })
+
+    engine.tick(holdOnly(0), 4100)
+
+    assertTrue(engine.notesStates.none { it.note.duration == 2000L })
   }
 
   @Test
@@ -119,6 +146,21 @@ class GameEngineTest {
 
     assertEquals(0, engine.score.combo)
     assertTrue(engine.score.score > afterHit)
+  }
+
+  @Test
+  fun `should break combo if pressing again on a broken sustain tail`() {
+    engine = engine(Note(1000, 0, 2000))
+
+    engine.tick(pressOnce(0), 1000)
+    engine.tick(release(0), 1400)
+
+    assertEquals(1, engine.score.combo)
+    assertTrue(engine.notesStates.first().sustainBroken)
+
+    engine.tick(pressOnce(0), 1450)
+
+    assertEquals(0, engine.score.combo)
   }
 
   @Test

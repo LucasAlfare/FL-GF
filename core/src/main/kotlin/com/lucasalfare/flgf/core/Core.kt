@@ -15,11 +15,14 @@ import org.w3c.dom.Element
  *
  * @property justPressedFrets Frets that were pressed exactly on this frame (edge-triggered).
  *
+ * @property justReleasedFrets Frets that were released exactly on this frame (edge-triggered).
+ *
  * @property activateSpecial Whether the player is attempting to activate the special mode.
  */
 data class PlayerInput(
   val pressedFrets: Set<Int>,
   val justPressedFrets: Set<Int>,
+  val justReleasedFrets: Set<Int> = emptySet(),
   val activateSpecial: Boolean = false
 )
 
@@ -52,13 +55,16 @@ data class Note(val hitTime: Long, val lane: Int, val duration: Long = 0L, val i
  * @property holding Whether the player is currently holding a sustain note.
  *
  * @property sustainProgress How much of the sustain duration has been completed.
+ *
+ * @property sustainBroken Whether the player released a sustain before it finished.
  */
 data class NoteState(
   val note: Note,
   var hit: Boolean = false,
   var missed: Boolean = false,
   var holding: Boolean = false,
-  var sustainProgress: Double = 0.0
+  var sustainProgress: Double = 0.0,
+  var sustainBroken: Boolean = false
 )
 
 /**
@@ -207,7 +213,7 @@ class GameEngine(
       special.sequenceBroken = false
     }
 
-    println("Current combo: ${score.combo}")
+    println("Score data: $score")
   }
 
   private fun onNoteMiss(note: Note) {
@@ -233,11 +239,24 @@ class GameEngine(
     val sustainRatePerSecond = 50.0
     notesStates.forEach {
       if (!it.holding) return@forEach
-      if (it.note.lane !in input.pressedFrets) {
+      val remaining = it.note.duration - it.sustainProgress
+
+      if (remaining <= 0.0) {
         it.holding = false
         return@forEach
       }
-      val remaining = it.note.duration - it.sustainProgress
+
+      val laneReleasedThisFrame = it.note.lane in input.justReleasedFrets
+      val laneStillHeld = it.note.lane in input.pressedFrets
+
+      if (laneReleasedThisFrame || !laneStillHeld) {
+        it.holding = false
+        if (it.sustainProgress < it.note.duration) {
+          it.sustainBroken = true
+        }
+        return@forEach
+      }
+
       val delta = minOf(dt.toDouble(), remaining)
       score.score += (delta / 1000.0 * sustainRatePerSecond * score.multiplier * specialMultiplier()).toInt()
       it.sustainProgress += delta
@@ -262,7 +281,13 @@ class GameEngine(
   }
 
   private fun cleanup() {
-    notesStates.removeIf { (it.missed || it.hit) && time > it.note.hitTime + 1000 }
+    // Sustain notes need to remain alive until the tail has fully left the screen.
+    notesStates.removeIf { (it.missed || it.hit) && time > despawnTime(it.note) }
+  }
+
+  private fun despawnTime(note: Note): Long {
+    val visibleLifetime = maxOf(1000L, note.duration)
+    return note.hitTime + visibleLifetime + 1000L
   }
 }
 

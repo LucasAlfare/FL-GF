@@ -21,9 +21,9 @@ import kotlin.random.Random
  */
 data class GameConfig(
   val noteSpeedPerMs: Float = 0.001975f, // velocidade expert?
-  val trackHeight: Float = 1.8f, // altura do tal mundo?
+  val trackHeight: Float = 1.8f, // altura do tal "mundo"?
   val hitLineY: Float = 0.15f,
-  val hitWindow: Long = 200L
+  val hitWindow: Long = 100L
 ) {
   /**
    * Quantos ms uma nota leva pra percorrer toda a pista.
@@ -31,6 +31,38 @@ data class GameConfig(
    */
   val spawnAheadTime: Long
     get() = (trackHeight / noteSpeedPerMs).toLong()
+}
+
+private object LanePalette {
+  private val colors = listOf(
+    Color(0.2f, 0.8f, 0.2f, 1f), // green
+    Color(0.8f, 0.2f, 0.2f, 1f), // red
+    Color(0.9f, 0.8f, 0.1f, 1f), // yellow
+    Color(0.2f, 0.2f, 0.9f, 1f), // blue
+    Color(0.95f, 0.5f, 0.15f, 1f), // orange
+  )
+
+  fun colorForLane(lane: Int): Color = colors.getOrElse(lane) { Color(0.7f, 0.7f, 0.7f, 1f) }
+}
+
+/**
+ * Centraliza toda a matemática de posicionamento das lanes.
+ * Qualquer renderer que precise saber onde uma lane está usa isso.
+ *
+ * @param trackStartX  X onde a pista começa (unidades de mundo).
+ * @param trackWidth   Largura total da pista (unidades de mundo).
+ * @param laneCount    Número de lanes.
+ * @param laneGap      Espaço entre lanes (unidades de mundo).
+ */
+data class LaneLayout(
+  val trackStartX: Float = 0.1f,
+  val trackWidth: Float = 0.8f,
+  val laneCount: Int = 5,
+  val laneGap: Float = 0.004f
+) {
+  val laneWidth: Float get() = trackWidth / laneCount
+
+  fun xForLane(lane: Int): Float = trackStartX + lane * laneWidth
 }
 
 /**
@@ -64,20 +96,12 @@ class HitSpotRenderer(
   private val config: GameConfig,
   private val laneLayout: LaneLayout
 ) {
-  private val laneColors = listOf(
-    Color(0.2f, 0.8f, 0.2f, 1f),
-    Color(0.8f, 0.2f, 0.2f, 1f),
-    Color(0.2f, 0.2f, 0.9f, 1f),
-    Color(0.9f, 0.8f, 0.1f, 1f),
-    Color(0.7f, 0.2f, 0.9f, 1f),
-  )
-
   private val spotHeight: Float
     get() = 0.15f
 
   fun draw(shapeRenderer: ShapeRenderer) {
     for (lane in 0 until laneLayout.laneCount) {
-      shapeRenderer.color = laneColors.getOrElse(lane) { Color.WHITE }
+      shapeRenderer.color = LanePalette.colorForLane(lane)
       shapeRenderer.rect(
         laneLayout.xForLane(lane),
         config.hitLineY - spotHeight / 2f,
@@ -98,77 +122,112 @@ class NoteRenderer(
 ) {
   private val noteHeight: Float
     get() = 0.1f
+  private val sustainBodyWidthRatio = 0.32f
 
-  private val colorPending = Color(0.2f, 1f, 0.4f, 1f)
-  private val colorHit = Color(1f, 1f, 1f, 0.3f)
-  private val colorMissed = Color(1f, 0.2f, 0.2f, 0.5f)
+  private val colorInactive = Color(0.55f, 0.55f, 0.58f, 1f)
+  private val colorBrokenBody = Color(0.55f, 0.55f, 0.58f, 0.25f)
 
   fun draw(shapeRenderer: ShapeRenderer, noteStates: List<NoteState>, songTime: Long) {
     noteStates.forEach { state ->
-      val distanceMs = state.note.hitTime - songTime
-      val y = config.hitLineY + distanceMs * config.noteSpeedPerMs
+      val headY = yForTime(state.note.hitTime, songTime)
+      val bodyTopY = yForTime(state.note.hitTime + state.note.duration, songTime)
+      val visibleBottom = config.hitLineY - noteHeight
+      val visibleTop = config.hitLineY + config.trackHeight
+      val noteTopY = maxOf(headY + noteHeight, bodyTopY)
 
-      if (y < config.hitLineY - noteHeight || y > config.hitLineY + config.trackHeight) {
+      if (noteTopY < visibleBottom || headY > visibleTop) {
         return@forEach
       }
 
-      shapeRenderer.color = when {
-        state.missed -> colorMissed
-        state.hit -> colorHit
-        else -> colorPending
-      }
-
-      shapeRenderer.rect(
-        laneLayout.xForLane(state.note.lane),
-        y,
-        laneLayout.laneWidth - laneLayout.laneGap,
-        noteHeight
-      )
+      // Draw the sustain body first so the note head sits on top of it.
+      drawSustainBody(shapeRenderer, state, headY, bodyTopY)
+      drawHead(shapeRenderer, state, headY)
     }
   }
-}
 
-/**
- * Centraliza toda a matemática de posicionamento das lanes.
- * Qualquer renderer que precise saber onde uma lane está usa isso.
- *
- * @param trackStartX  X onde a pista começa (unidades de mundo).
- * @param trackWidth   Largura total da pista (unidades de mundo).
- * @param laneCount    Número de lanes.
- * @param laneGap      Espaço entre lanes (unidades de mundo).
- */
-data class LaneLayout(
-  val trackStartX: Float = 0.1f,
-  val trackWidth: Float = 0.8f,
-  val laneCount: Int = 5,
-  val laneGap: Float = 0.004f
-) {
-  val laneWidth: Float get() = trackWidth / laneCount
+  private fun yForTime(noteTime: Long, songTime: Long): Float {
+    val distanceMs = noteTime - songTime
+    return config.hitLineY + distanceMs * config.noteSpeedPerMs
+  }
 
-  fun xForLane(lane: Int): Float = trackStartX + lane * laneWidth
+  private fun drawHead(shapeRenderer: ShapeRenderer, state: NoteState, headY: Float) {
+    if (state.hit) return
+
+    shapeRenderer.color = if (state.missed || state.sustainBroken) {
+      colorInactive
+    } else {
+      LanePalette.colorForLane(state.note.lane)
+    }
+
+    shapeRenderer.rect(
+      laneLayout.xForLane(state.note.lane),
+      headY,
+      laneLayout.laneWidth - laneLayout.laneGap,
+      noteHeight
+    )
+  }
+
+  private fun drawSustainBody(
+    shapeRenderer: ShapeRenderer,
+    state: NoteState,
+    headY: Float,
+    bodyTopY: Float
+  ) {
+    if (state.note.duration <= 0L) return
+    if (state.hit && !state.sustainBroken && state.sustainProgress >= state.note.duration) return
+
+    val rawBodyStartY = headY + noteHeight
+    val bodyStartY = if (state.hit && !state.sustainBroken && state.holding) {
+      maxOf(rawBodyStartY, config.hitLineY)
+    } else {
+      rawBodyStartY
+    }
+    val bodyHeight = bodyTopY - bodyStartY
+    if (bodyHeight <= 0f) return
+
+    val laneX = laneLayout.xForLane(state.note.lane)
+    val laneWidth = laneLayout.laneWidth - laneLayout.laneGap
+    val sustainWidth = laneWidth * sustainBodyWidthRatio
+    val sustainX = laneX + (laneWidth - sustainWidth) / 2f
+
+    shapeRenderer.color = when {
+      state.hit && !state.sustainBroken -> LanePalette.colorForLane(state.note.lane).cpy().apply { a = 0.55f }
+      state.sustainBroken || state.missed -> colorBrokenBody
+      else -> LanePalette.colorForLane(state.note.lane).cpy().apply { a = 0.5f }
+    }
+
+    shapeRenderer.rect(sustainX, bodyStartY, sustainWidth, bodyHeight)
+  }
 }
 
 // isso aqui está "overegeneering"? se estiver, quero deixar trivial ou mais performático, como um array de booleans pra
 // marcar os inputs que foram pressed etc. adapte a lógica se necessário.
 object InputHandler {
-  private val previousPressed = mutableSetOf<Int>()
+  private val laneKeys = intArrayOf(
+    Input.Keys.E,
+    Input.Keys.T,
+    Input.Keys.U,
+    Input.Keys.I,
+    Input.Keys.O
+  )
+  private val previousPressed = BooleanArray(laneKeys.size)
 
   fun update(): PlayerInput {
-    val pressed = mutableSetOf<Int>()
+    val pressed = BooleanArray(laneKeys.size)
+    val justPressed = BooleanArray(laneKeys.size)
+    val justReleased = BooleanArray(laneKeys.size)
 
-    if (Gdx.input.isKeyPressed(Input.Keys.E)) pressed += 0
-    if (Gdx.input.isKeyPressed(Input.Keys.T)) pressed += 1
-    if (Gdx.input.isKeyPressed(Input.Keys.U)) pressed += 2
-    if (Gdx.input.isKeyPressed(Input.Keys.I)) pressed += 3
-    if (Gdx.input.isKeyPressed(Input.Keys.O)) pressed += 4
-
-    val justPressed = pressed.filter { it !in previousPressed }.toSet()
-    previousPressed.clear()
-    previousPressed += pressed
+    for (lane in laneKeys.indices) {
+      pressed[lane] = Gdx.input.isKeyPressed(laneKeys[lane])
+      justPressed[lane] = pressed[lane] && !previousPressed[lane]
+      justReleased[lane] = !pressed[lane] && previousPressed[lane]
+      previousPressed[lane] = pressed[lane]
+    }
 
     return PlayerInput(
-      pressedFrets = pressed,
-      justPressedFrets = justPressed,
+      pressedFrets = pressed.indices.filter { pressed[it] }.toSet(),
+      justPressedFrets = justPressed.indices.filter { justPressed[it] }.toSet(),
+      justReleasedFrets = justReleased.indices.filter { justReleased[it] }.toSet(),
       activateSpecial = Gdx.input.isKeyJustPressed(Input.Keys.SPACE)
     )
   }
@@ -203,13 +262,14 @@ class GuitarFlashGame : ApplicationAdapter() {
 
     // notas fake pra testar, quero pegar do "resources/aux_song.xml" depois
     val notes = mutableListOf(
-      Note(hitTime = 1000L, lane = 0), Note(hitTime = 1000L, lane = 4),
-      Note(hitTime = 2000L, lane = 2), Note(hitTime = 2000L, lane = 3),
-      Note(hitTime = 3000L, lane = 2), Note(hitTime = 3000L, lane = 3),
+      Note(hitTime = 1000L, lane = 0, duration = 2000),
+      //Note(hitTime = 1000L, lane = 4),
+//      Note(hitTime = 2000L, lane = 2), Note(hitTime = 2000L, lane = 3),
+//      Note(hitTime = 3000L, lane = 2), Note(hitTime = 3000L, lane = 3),
     )
     var lastTime = 6000
     repeat(100) {
-      val nextTime = Random.nextInt(lastTime, lastTime + 1000)
+      val nextTime = Random.nextInt(lastTime, lastTime + 400)
       notes += Note(hitTime = nextTime.toLong(), lane = Random.nextInt(5))
       lastTime = nextTime
     }
