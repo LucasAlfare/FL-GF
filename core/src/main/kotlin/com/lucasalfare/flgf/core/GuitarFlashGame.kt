@@ -18,11 +18,12 @@ import kotlin.math.max
 data class GameConfig(
   val noteSpeedPerMs: Float = 0.001975f,
   val playfieldWidth: Float = 0.72f,
-  val playfieldHeight: Float = 2f,
+  val playfieldHeight: Float = 4f, //4f considerando rotação no eixo em 70f
   val playfieldCenterX: Float = 0.5f,
   val playfieldCenterY: Float = 1.0f,
   val hitLineInsetFromBottom: Float = 0.14f,
-  val hitWindow: Long = 100L
+  val hitWindow: Long = 100L,
+  val perspective: PlayfieldPerspectiveConfig = PlayfieldPerspectiveConfig(rotationXDegrees = 70f)
 ) {
   val trackTravelHeight: Float
     get() = max(0f, playfieldHeight - hitLineInsetFromBottom)
@@ -86,7 +87,6 @@ private object LanePalette {
 }
 
 private val specialActiveColor = Color(0.1f, 0.92f, 1f, 1f)
-private val specialIdleColor = Color(1f, 0.84f, 0.2f, 1f)
 private val brokenColor = Color(0.55f, 0.55f, 0.58f, 0.25f)
 
 private enum class NoteRenderState {
@@ -101,16 +101,16 @@ private fun NoteState.renderState(specialActive: Boolean): NoteRenderState = whe
   else -> NoteRenderState.NORMAL
 }
 
-private const val DEBUG_START_DELAY_MS = 1000L
-private const val DEBUG_NORMAL_NOTE_SPACING_MS = 220L
-private const val DEBUG_SPECIAL_NOTE_SPACING_MS = 150L
-private const val DEBUG_SPECIAL_SEQUENCE_SIZE = 10
-private const val DEBUG_NORMAL_RUN_SIZE = 4
-private const val DEBUG_SPECIAL_TO_BANK_GAP_MS = 420L
-private const val DEBUG_BANK_TO_NEXT_SECTION_GAP_MS = 520L
-private const val DEBUG_LOOP_COUNT = 4
-
 private fun buildDebugChart(laneCount: Int): List<Note> {
+  val DEBUG_START_DELAY_MS = 1000L
+  val DEBUG_NORMAL_NOTE_SPACING_MS = 220L
+  val DEBUG_SPECIAL_NOTE_SPACING_MS = 150L
+  val DEBUG_SPECIAL_SEQUENCE_SIZE = 10
+  val DEBUG_NORMAL_RUN_SIZE = 4
+  val DEBUG_SPECIAL_TO_BANK_GAP_MS = 420L
+  val DEBUG_BANK_TO_NEXT_SECTION_GAP_MS = 520L
+  val DEBUG_LOOP_COUNT = 4
+
   val notes = mutableListOf<Note>()
   var time = DEBUG_START_DELAY_MS
 
@@ -162,11 +162,13 @@ private fun buildDebugChart(laneCount: Int): List<Note> {
  * Draws the track background and the lane separators.
  */
 class TrackRenderer(
-  private val layout: PlayfieldLayout
+  private val layout: PlayfieldLayout,
+  private val perspective: PlayfieldPerspective
 ) {
   fun draw(shapeRenderer: ShapeRenderer) {
     shapeRenderer.color = Color(0.12f, 0.12f, 0.15f, 1f)
-    shapeRenderer.rect(
+    perspective.drawProjectedRect(
+      shapeRenderer,
       layout.left,
       layout.bottom,
       layout.width,
@@ -176,7 +178,7 @@ class TrackRenderer(
     shapeRenderer.color = Color(0.3f, 0.3f, 0.35f, 1f)
     for (i in 1 until layout.laneCount) {
       val x = layout.left + i * layout.laneWidth
-      shapeRenderer.rect(x, layout.bottom, 0.002f, layout.height)
+      perspective.drawProjectedRect(shapeRenderer, x, layout.bottom, 0.002f, layout.height)
     }
   }
 }
@@ -185,12 +187,14 @@ class TrackRenderer(
  * Draws the fixed hit spots on the hit line.
  */
 class HitSpotRenderer(
-  private val layout: PlayfieldLayout
+  private val layout: PlayfieldLayout,
+  private val perspective: PlayfieldPerspective
 ) {
   fun draw(shapeRenderer: ShapeRenderer) {
     for (lane in 0 until layout.laneCount) {
       shapeRenderer.color = LanePalette.colorForLane(lane)
-      shapeRenderer.rect(
+      perspective.drawProjectedRect(
+        shapeRenderer,
         layout.xForLane(lane),
         layout.hitLineY - layout.spotHeight / 2f,
         layout.laneWidth - layout.laneGap,
@@ -204,7 +208,8 @@ class HitSpotRenderer(
  * Draws the moving notes.
  */
 class NoteRenderer(
-  private val layout: PlayfieldLayout
+  private val layout: PlayfieldLayout,
+  private val perspective: PlayfieldPerspective
 ) {
   private val colorInactive = Color(0.55f, 0.55f, 0.58f, 1f)
 
@@ -258,12 +263,7 @@ class NoteRenderer(
       return
     }
 
-    shapeRenderer.rect(
-      laneX,
-      headY,
-      laneWidth,
-      layout.noteHeight
-    )
+    perspective.drawProjectedRect(shapeRenderer, laneX, headY, laneWidth, layout.noteHeight)
   }
 
   private fun drawSustainBody(
@@ -292,16 +292,20 @@ class NoteRenderer(
 
     shapeRenderer.color = when {
       state.sustainBroken || state.missed -> brokenColor
-      state.hit && !state.sustainBroken -> colorForState(state, renderState).cpy().apply { a = if (renderState == NoteRenderState.SPECIAL_ACTIVE) 0.58f else 0.55f }
-      else -> colorForState(state, renderState).cpy().apply { a = if (renderState == NoteRenderState.SPECIAL_ACTIVE || renderState == NoteRenderState.SPECIAL) 0.45f else 0.5f }
+      state.hit -> colorForState(state, renderState).cpy()
+        .apply { a = if (renderState == NoteRenderState.SPECIAL_ACTIVE) 0.58f else 0.55f }
+
+      else -> colorForState(state, renderState).cpy().apply {
+        a = if (renderState == NoteRenderState.SPECIAL_ACTIVE || renderState == NoteRenderState.SPECIAL) 0.45f else 0.5f
+      }
     }
 
-    shapeRenderer.rect(sustainX, bodyStartY, sustainWidth, bodyHeight)
+    perspective.drawProjectedRect(shapeRenderer, sustainX, bodyStartY, sustainWidth, bodyHeight)
   }
 
   private fun colorForState(state: NoteState, renderState: NoteRenderState): Color = when (renderState) {
     NoteRenderState.SPECIAL_ACTIVE -> specialActiveColor
-    NoteRenderState.SPECIAL -> specialIdleColor
+    NoteRenderState.SPECIAL -> LanePalette.colorForLane(state.note.lane)
     NoteRenderState.NORMAL -> LanePalette.colorForLane(state.note.lane)
   }
 
@@ -314,7 +318,8 @@ class NoteRenderer(
     val topY = headY + layout.noteHeight
     val centerX = laneX + laneWidth / 2f
 
-    shapeRenderer.triangle(
+    perspective.drawProjectedTriangle(
+      shapeRenderer,
       laneX,
       topY,
       laneX + laneWidth,
@@ -325,7 +330,7 @@ class NoteRenderer(
   }
 }
 
-// This input helper can stay simple for now.
+// This input helper can stay simple for now. TODO: in the future implement this using bit masking, to avoid allocations
 object InputHandler {
   private val laneKeys = intArrayOf(
     Input.Keys.E,
@@ -366,8 +371,16 @@ class GuitarFlashGame : ApplicationAdapter() {
 
   private lateinit var engine: GameEngine
 
-  private val config = GameConfig()
+  private val config = GameConfig(
+    perspective = PlayfieldPerspectiveConfig(
+      enabled = true,
+      rotationXDegrees = 70f,
+      rotationYDegrees = 0f,
+      rotationZDegrees = 0f
+    )
+  )
   private val layout = PlayfieldLayout(config)
+  private val perspective = PlayfieldPerspective(layout, config.perspective)
 
   private lateinit var trackRenderer: TrackRenderer
   private lateinit var hitSpotRenderer: HitSpotRenderer
@@ -380,9 +393,9 @@ class GuitarFlashGame : ApplicationAdapter() {
 
     shapeRenderer = ShapeRenderer()
 
-    trackRenderer = TrackRenderer(layout)
-    hitSpotRenderer = HitSpotRenderer(layout)
-    noteRenderer = NoteRenderer(layout)
+    trackRenderer = TrackRenderer(layout, perspective)
+    hitSpotRenderer = HitSpotRenderer(layout, perspective)
+    noteRenderer = NoteRenderer(layout, perspective)
 
     // Fake notes for now: alternating normal and special sections so you can farm energy from zero.
     val notes = buildDebugChart(layout.laneCount)
