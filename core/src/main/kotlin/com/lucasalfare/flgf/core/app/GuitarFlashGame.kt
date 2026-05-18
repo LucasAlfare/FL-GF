@@ -7,6 +7,16 @@ import com.badlogic.gdx.graphics.OrthographicCamera
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.utils.TimeUtils
 import com.badlogic.gdx.utils.viewport.FitViewport
+import com.lucasalfare.flgf.core.game.GameEngine
+import com.lucasalfare.flgf.core.game.Note
+import com.lucasalfare.flgf.core.input.InputHandler
+import com.lucasalfare.flgf.core.view.GameConfig
+import com.lucasalfare.flgf.core.view.PlayfieldLayout
+import com.lucasalfare.flgf.core.view.PlayfieldPerspective
+import com.lucasalfare.flgf.core.view.PlayfieldPerspectiveConfig
+import com.lucasalfare.flgf.core.view.render.HitSpotRenderer
+import com.lucasalfare.flgf.core.view.render.NoteRenderer
+import com.lucasalfare.flgf.core.view.render.TrackRenderer
 
 class GuitarFlashGame : ApplicationAdapter() {
 
@@ -15,23 +25,23 @@ class GuitarFlashGame : ApplicationAdapter() {
   private lateinit var shapeRenderer: ShapeRenderer
   private var startTime: Long = 0L
 
-  private lateinit var engine: com.lucasalfare.flgf.core.game.GameEngine
+  private lateinit var engine: GameEngine
 
-  private val config = _root_ide_package_.com.lucasalfare.flgf.core.view.GameConfig(
-    perspective = _root_ide_package_.com.lucasalfare.flgf.core.view.PlayfieldPerspectiveConfig(
+  private val config = GameConfig(
+    perspective = PlayfieldPerspectiveConfig(
       enabled = true,
       rotationXDegrees = 70f,
       rotationYDegrees = 0f,
       rotationZDegrees = 0f
     )
   )
-  private val layout = _root_ide_package_.com.lucasalfare.flgf.core.view.PlayfieldLayout(config)
+  private val layout = PlayfieldLayout(config)
   private val perspective =
-    _root_ide_package_.com.lucasalfare.flgf.core.view.PlayfieldPerspective(layout, config.perspective)
+    PlayfieldPerspective(layout, config.perspective)
 
-  private lateinit var trackRenderer: com.lucasalfare.flgf.core.view.render.TrackRenderer
-  private lateinit var hitSpotRenderer: com.lucasalfare.flgf.core.view.render.HitSpotRenderer
-  private lateinit var noteRenderer: com.lucasalfare.flgf.core.view.render.NoteRenderer
+  private lateinit var trackRenderer: TrackRenderer
+  private lateinit var hitSpotRenderer: HitSpotRenderer
+  private lateinit var noteRenderer: NoteRenderer
 
   override fun create() {
     camera = OrthographicCamera()
@@ -40,14 +50,14 @@ class GuitarFlashGame : ApplicationAdapter() {
 
     shapeRenderer = ShapeRenderer()
 
-    trackRenderer = _root_ide_package_.com.lucasalfare.flgf.core.view.render.TrackRenderer(layout, perspective)
-    hitSpotRenderer = _root_ide_package_.com.lucasalfare.flgf.core.view.render.HitSpotRenderer(layout, perspective)
-    noteRenderer = _root_ide_package_.com.lucasalfare.flgf.core.view.render.NoteRenderer(layout, perspective)
+    trackRenderer = TrackRenderer(layout, perspective)
+    hitSpotRenderer = HitSpotRenderer(layout, perspective)
+    noteRenderer = NoteRenderer(layout, perspective)
 
     // Fake notes for now: alternating normal and special sections so you can farm energy from zero.
-    val notes = _root_ide_package_.com.lucasalfare.flgf.core.app.buildDebugChart(layout.laneCount)
+    val notes = buildDebugChart(layout.laneCount)
 
-    engine = _root_ide_package_.com.lucasalfare.flgf.core.game.GameEngine(
+    engine = GameEngine(
       hitWindow = config.hitWindow,
       spawnAheadTime = config.spawnAheadTime,
       notes = notes
@@ -62,7 +72,7 @@ class GuitarFlashGame : ApplicationAdapter() {
     Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT)
 
     val songTime = TimeUtils.timeSinceMillis(startTime)
-    engine.tick(input = _root_ide_package_.com.lucasalfare.flgf.core.input.InputHandler.update(), currentTime = songTime)
+    engine.tick(input = InputHandler.update(), currentTime = songTime)
 
     camera.update()
     shapeRenderer.projectionMatrix = camera.combined
@@ -84,7 +94,7 @@ class GuitarFlashGame : ApplicationAdapter() {
   }
 }
 
-private fun buildDebugChart(laneCount: Int): List<com.lucasalfare.flgf.core.game.Note> {
+private fun buildDebugChart(laneCount: Int): List<Note> {
   val DEBUG_START_DELAY_MS = 1000L
   val DEBUG_NORMAL_NOTE_SPACING_MS = 220L
   val DEBUG_SPECIAL_NOTE_SPACING_MS = 150L
@@ -94,13 +104,13 @@ private fun buildDebugChart(laneCount: Int): List<com.lucasalfare.flgf.core.game
   val DEBUG_BANK_TO_NEXT_SECTION_GAP_MS = 520L
   val DEBUG_LOOP_COUNT = 4
 
-  val notes = mutableListOf<com.lucasalfare.flgf.core.game.Note>()
+  val notes = mutableListOf<Note>()
   var time = DEBUG_START_DELAY_MS
 
   fun addNormalRun(startTime: Long, laneOffset: Int, count: Int): Long {
     var currentTime = startTime
     repeat(count) { index ->
-      notes += _root_ide_package_.com.lucasalfare.flgf.core.game.Note(
+      notes += Note(
         hitTime = currentTime,
         lane = (laneOffset + index) % laneCount
       )
@@ -112,7 +122,7 @@ private fun buildDebugChart(laneCount: Int): List<com.lucasalfare.flgf.core.game
   fun addSpecialPhrase(startTime: Long, laneOffset: Int): Long {
     var currentTime = startTime
     repeat(DEBUG_SPECIAL_SEQUENCE_SIZE) { index ->
-      notes += _root_ide_package_.com.lucasalfare.flgf.core.game.Note(
+      notes += Note(
         hitTime = currentTime,
         lane = (laneOffset + index) % laneCount,
         isSpecial = true
@@ -129,7 +139,7 @@ private fun buildDebugChart(laneCount: Int): List<com.lucasalfare.flgf.core.game
     time = addSpecialPhrase(time, block)
     time += DEBUG_SPECIAL_TO_BANK_GAP_MS
 
-    notes += _root_ide_package_.com.lucasalfare.flgf.core.game.Note(
+    notes += Note(
       hitTime = time,
       lane = (block + 2) % laneCount
     )
