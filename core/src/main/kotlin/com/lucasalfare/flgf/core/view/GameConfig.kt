@@ -9,7 +9,7 @@ import kotlin.math.max
 data class GameConfig(
   val noteSpeedPerMs: Float = 0.001975f,
   val playfieldWidth: Float = 0.72f,
-  val playfieldHeight: Float = 2f, //4f considerando rotação no eixo em 70f; 2f se 0f de rotação
+  val playfieldHeight: Float = 4f, //4f considerando rotação no eixo em 70f; 2f se 0f de rotação
   val playfieldCenterX: Float = 0.5f,
   val playfieldCenterY: Float = 1.0f,
   val hitLineInsetFromBottom: Float = 0.14f,

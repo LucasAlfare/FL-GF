@@ -29,6 +29,7 @@ class GameEngine(
   private val scoringRules: ScoringRules = ScoringRules()
 ) {
   private val scoring = ScoringSystem(scoringRules)
+  private val specialPhraseEndIndices = buildSpecialPhraseEndIndices(notes)
   private var time: Long = 0
   private var nextIndex = 0
   private var specialDisabledUntilTime: Long = Long.MIN_VALUE
@@ -54,7 +55,8 @@ class GameEngine(
       notesStates.add(
         NoteState(
           note = note,
-          specialDisabled = note.isSpecial && note.hitTime < specialDisabledUntilTime
+          specialDisabled = note.isSpecial && note.hitTime < specialDisabledUntilTime,
+          specialPhraseEnd = nextIndex in specialPhraseEndIndices
         )
       )
       nextIndex++
@@ -114,6 +116,11 @@ class GameEngine(
     if (noteState.note.isSpecial && !noteState.specialDisabled) {
       if (!special.inSequence) {
         special.inSequence = true
+        special.sequenceBroken = false
+      }
+      if (noteState.specialPhraseEnd && !special.sequenceBroken) {
+        special.energy = scoring.gainSpecialEnergy(special.energy)
+        special.inSequence = false
         special.sequenceBroken = false
       }
     } else if (noteState.note.isSpecial && noteState.specialDisabled) {
@@ -202,5 +209,20 @@ class GameEngine(
   private fun despawnTime(note: Note): Long {
     val visibleLifetime = maxOf(1000L, note.duration)
     return note.hitTime + visibleLifetime + 1000L
+  }
+
+  private fun buildSpecialPhraseEndIndices(notes: List<Note>): Set<Int> {
+    if (notes.isEmpty()) return emptySet()
+
+    val ends = mutableSetOf<Int>()
+    notes.forEachIndexed { index, note ->
+      if (!note.isSpecial) return@forEachIndexed
+
+      val nextNote = notes.getOrNull(index + 1)
+      if (nextNote == null || !nextNote.isSpecial) {
+        ends += index
+      }
+    }
+    return ends
   }
 }

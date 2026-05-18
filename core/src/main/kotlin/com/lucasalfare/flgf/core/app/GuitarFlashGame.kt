@@ -55,7 +55,7 @@ class GuitarFlashGame : ApplicationAdapter() {
     trackRenderer = TrackRenderer(layout, perspective)
     hitSpotRenderer = HitSpotRenderer(layout, perspective)
     noteRenderer = NoteRenderer(layout, perspective)
-    specialMeterRenderer = SpecialMeterRenderer(layout)
+    specialMeterRenderer = SpecialMeterRenderer(layout, perspective)
 
     // Fake notes for now: alternating normal and special sections so you can farm energy from zero.
     val notes = buildDebugChart(layout.laneCount)

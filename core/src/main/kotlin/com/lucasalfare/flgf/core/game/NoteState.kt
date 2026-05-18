@@ -25,5 +25,6 @@ data class NoteState(
   var holding: Boolean = false,
   var sustainProgress: Double = 0.0,
   var sustainBroken: Boolean = false,
-  var specialDisabled: Boolean = false
+  var specialDisabled: Boolean = false,
+  var specialPhraseEnd: Boolean = false
 )
