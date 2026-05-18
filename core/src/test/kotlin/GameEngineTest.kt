@@ -261,4 +261,49 @@ class GameEngineTest {
 
     assertTrue(engine.score.score >= 100)
   }
+
+  @Test
+  fun `should drain special over time even with small frame steps`() {
+    engine = engine()
+
+    engine.special.energy = 100
+    engine.special.active = true
+
+    var currentTime = 10L
+    repeat(400) {
+      engine.tick(holdOnly(), currentTime)
+      currentTime += 10
+    }
+
+    assertEquals(0, engine.special.energy)
+    assertFalse(engine.special.active)
+    assertEquals(0.0, engine.special.drainAccumulator, 0.0001)
+  }
+
+  @Test
+  fun `should disable the rest of a special phrase after a miss`() {
+    engine = engine(
+      Note(1000, 0, 0, true),
+      Note(1400, 1, 0, true),
+      Note(1800, 2, 0, true),
+      Note(2200, 3, 0)
+    )
+
+    engine.tick(pressOnce(0), 1000)
+    assertEquals(1, engine.score.combo)
+
+    engine.tick(holdOnly(), 1505)
+
+    engine.tick(pressOnce(2), 1800)
+
+    val nextSpecial = engine.notesStates.first { it.note.hitTime == 1800L }
+    assertTrue(nextSpecial.specialDisabled)
+    assertTrue(engine.special.sequenceBroken)
+
+    engine.tick(pressOnce(3), 2200)
+
+    assertEquals(2, engine.score.combo)
+    assertEquals(0, engine.special.energy)
+    assertFalse(engine.special.sequenceBroken)
+  }
 }

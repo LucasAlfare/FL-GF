@@ -64,7 +64,8 @@ data class NoteState(
   var missed: Boolean = false,
   var holding: Boolean = false,
   var sustainProgress: Double = 0.0,
-  var sustainBroken: Boolean = false
+  var sustainBroken: Boolean = false,
+  var specialDisabled: Boolean = false
 )
 
 /**
@@ -95,7 +96,8 @@ data class SpecialState(
   var energy: Int = 0,
   var active: Boolean = false,
   var inSequence: Boolean = false,
-  var sequenceBroken: Boolean = false
+  var sequenceBroken: Boolean = false,
+  var drainAccumulator: Double = 0.0
 )
 
 // ==================== GAME ENGINE ====================
@@ -127,6 +129,7 @@ class GameEngine(
 ) {
   private var time: Long = 0
   private var nextIndex = 0
+  private var specialDisabledUntilTime: Long = Long.MIN_VALUE
 
   val notesStates = mutableListOf<NoteState>()
   val score = ScoreState()
@@ -145,7 +148,13 @@ class GameEngine(
 
   private fun spawnNotes() {
     while (nextIndex < notes.size && notes[nextIndex].hitTime <= time + spawnAheadTime) {
-      notesStates.add(NoteState(notes[nextIndex]))
+      val note = notes[nextIndex]
+      notesStates.add(
+        NoteState(
+          note = note,
+          specialDisabled = note.isSpecial && note.hitTime < specialDisabledUntilTime
+        )
+      )
       nextIndex++
     }
   }
@@ -160,7 +169,7 @@ class GameEngine(
     resetCombo()
     missedNotes.forEach {
       it.missed = true
-      onNoteMiss(it.note)
+      onNoteMiss(it)
     }
   }
 
@@ -184,7 +193,7 @@ class GameEngine(
 
     hitNotes.forEach {
       addHit()
-      onNoteHit(it.note)
+      onNoteHit(it)
     }
 
     if (hasWrongInput) resetCombo()
@@ -198,13 +207,15 @@ class GameEngine(
       .minWithOrNull(compareBy<NoteState>({ abs(time - it.note.hitTime) }, { it.note.hitTime }))
   }
 
-  private fun onNoteHit(note: Note) {
+  private fun onNoteHit(noteState: NoteState) {
     if (special.active) return
-    if (note.isSpecial) {
+    if (noteState.note.isSpecial && !noteState.specialDisabled) {
       if (!special.inSequence) {
         special.inSequence = true
         special.sequenceBroken = false
       }
+    } else if (noteState.note.isSpecial && noteState.specialDisabled) {
+      return
     } else {
       if (special.inSequence && !special.sequenceBroken) {
         special.energy = (special.energy + 25).coerceAtMost(100)
@@ -216,20 +227,50 @@ class GameEngine(
     println("Score data: $score")
   }
 
-  private fun onNoteMiss(note: Note) {
-    if (note.isSpecial) special.sequenceBroken = true
+  private fun onNoteMiss(noteState: NoteState) {
+    if (!noteState.note.isSpecial || noteState.specialDisabled) return
+
+    special.sequenceBroken = true
+
+    val currentIndex = notes.indexOfFirst { it == noteState.note }
+    val sequenceEndTime = notes
+      .drop(currentIndex + 1)
+      .firstOrNull { !it.isSpecial }
+      ?.hitTime ?: Long.MAX_VALUE
+
+    specialDisabledUntilTime = sequenceEndTime
+
+    notesStates.forEach {
+      if (!it.hit && !it.missed &&
+        it.note.isSpecial &&
+        it.note.hitTime >= noteState.note.hitTime &&
+        it.note.hitTime < sequenceEndTime
+      ) {
+        it.specialDisabled = true
+      }
+    }
   }
 
   private fun updateSpecial(input: PlayerInput, dt: Long) {
     if (input.activateSpecial && special.energy >= 50) special.active = true
     if (special.active) {
-      special.energy -= (25 * (dt / 1000.0)).toInt()
+      special.drainAccumulator += 25.0 * dt / 1000.0
+      val drainedEnergy = special.drainAccumulator.toInt()
+
+      if (drainedEnergy > 0) {
+        special.energy = (special.energy - drainedEnergy).coerceAtLeast(0)
+        special.drainAccumulator -= drainedEnergy
+      }
+
       if (special.energy <= 0) {
         special.energy = 0
         special.active = false
+        special.drainAccumulator = 0.0
       }
       special.inSequence = false
       special.sequenceBroken = false
+    } else {
+      special.drainAccumulator = 0.0
     }
   }
 

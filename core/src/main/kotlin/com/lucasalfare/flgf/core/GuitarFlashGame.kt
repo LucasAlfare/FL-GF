@@ -89,6 +89,18 @@ private val specialActiveColor = Color(0.1f, 0.92f, 1f, 1f)
 private val specialIdleColor = Color(1f, 0.84f, 0.2f, 1f)
 private val brokenColor = Color(0.55f, 0.55f, 0.58f, 0.25f)
 
+private enum class NoteRenderState {
+  NORMAL,
+  SPECIAL,
+  SPECIAL_ACTIVE
+}
+
+private fun NoteState.renderState(specialActive: Boolean): NoteRenderState = when {
+  specialActive -> NoteRenderState.SPECIAL_ACTIVE
+  note.isSpecial && !specialDisabled -> NoteRenderState.SPECIAL
+  else -> NoteRenderState.NORMAL
+}
+
 private const val DEBUG_START_DELAY_MS = 1000L
 private const val DEBUG_NORMAL_NOTE_SPACING_MS = 220L
 private const val DEBUG_SPECIAL_NOTE_SPACING_MS = 150L
@@ -203,6 +215,7 @@ class NoteRenderer(
     specialActive: Boolean
   ) {
     noteStates.forEach { state ->
+      val renderState = state.renderState(specialActive)
       val headY = yForTime(state.note.hitTime, songTime)
       val bodyTopY = yForTime(state.note.hitTime + state.note.duration, songTime)
       val visibleBottom = layout.hitLineY - layout.noteHeight
@@ -214,8 +227,8 @@ class NoteRenderer(
       }
 
       // Draw the sustain body first so the note head sits on top.
-      drawSustainBody(shapeRenderer, state, headY, bodyTopY, specialActive)
-      drawHead(shapeRenderer, state, headY, specialActive)
+      drawSustainBody(shapeRenderer, state, headY, bodyTopY, renderState)
+      drawHead(shapeRenderer, state, headY, renderState)
     }
   }
 
@@ -228,7 +241,7 @@ class NoteRenderer(
     shapeRenderer: ShapeRenderer,
     state: NoteState,
     headY: Float,
-    specialActive: Boolean
+    renderState: NoteRenderState
   ) {
     if (state.hit) return
 
@@ -237,12 +250,10 @@ class NoteRenderer(
 
     shapeRenderer.color = when {
       state.missed || state.sustainBroken -> colorInactive
-      specialActive -> specialActiveColor
-      state.note.isSpecial -> specialIdleColor
-      else -> LanePalette.colorForLane(state.note.lane)
+      else -> colorForState(state, renderState)
     }
 
-    if (state.note.isSpecial) {
+    if (renderState == NoteRenderState.SPECIAL) {
       drawSpecialHead(shapeRenderer, laneX, headY, laneWidth)
       return
     }
@@ -260,7 +271,7 @@ class NoteRenderer(
     state: NoteState,
     headY: Float,
     bodyTopY: Float,
-    specialActive: Boolean
+    renderState: NoteRenderState
   ) {
     if (state.note.duration <= 0L) return
     if (state.hit && !state.sustainBroken && state.sustainProgress >= state.note.duration) return
@@ -281,14 +292,17 @@ class NoteRenderer(
 
     shapeRenderer.color = when {
       state.sustainBroken || state.missed -> brokenColor
-      state.hit && !state.sustainBroken && specialActive -> specialActiveColor.cpy().apply { a = 0.58f }
-      state.hit && !state.sustainBroken -> LanePalette.colorForLane(state.note.lane).cpy().apply { a = 0.55f }
-      specialActive -> specialActiveColor.cpy().apply { a = 0.45f }
-      state.note.isSpecial -> specialIdleColor.cpy().apply { a = 0.45f }
-      else -> LanePalette.colorForLane(state.note.lane).cpy().apply { a = 0.5f }
+      state.hit && !state.sustainBroken -> colorForState(state, renderState).cpy().apply { a = if (renderState == NoteRenderState.SPECIAL_ACTIVE) 0.58f else 0.55f }
+      else -> colorForState(state, renderState).cpy().apply { a = if (renderState == NoteRenderState.SPECIAL_ACTIVE || renderState == NoteRenderState.SPECIAL) 0.45f else 0.5f }
     }
 
     shapeRenderer.rect(sustainX, bodyStartY, sustainWidth, bodyHeight)
+  }
+
+  private fun colorForState(state: NoteState, renderState: NoteRenderState): Color = when (renderState) {
+    NoteRenderState.SPECIAL_ACTIVE -> specialActiveColor
+    NoteRenderState.SPECIAL -> specialIdleColor
+    NoteRenderState.NORMAL -> LanePalette.colorForLane(state.note.lane)
   }
 
   private fun drawSpecialHead(
