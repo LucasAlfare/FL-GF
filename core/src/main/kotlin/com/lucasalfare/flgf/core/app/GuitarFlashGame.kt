@@ -16,6 +16,7 @@ import com.lucasalfare.flgf.core.view.PlayfieldPerspective
 import com.lucasalfare.flgf.core.view.PlayfieldPerspectiveConfig
 import com.lucasalfare.flgf.core.view.render.HitSpotRenderer
 import com.lucasalfare.flgf.core.view.render.NoteRenderer
+import com.lucasalfare.flgf.core.view.render.SpecialMeterRenderer
 import com.lucasalfare.flgf.core.view.render.TrackRenderer
 
 class GuitarFlashGame : ApplicationAdapter() {
@@ -29,7 +30,7 @@ class GuitarFlashGame : ApplicationAdapter() {
 
   private val config = GameConfig(
     perspective = PlayfieldPerspectiveConfig(
-      enabled = false,
+      enabled = true,
       rotationXDegrees = 70f,
       rotationYDegrees = 0f,
       rotationZDegrees = 0f
@@ -42,6 +43,7 @@ class GuitarFlashGame : ApplicationAdapter() {
   private lateinit var trackRenderer: TrackRenderer
   private lateinit var hitSpotRenderer: HitSpotRenderer
   private lateinit var noteRenderer: NoteRenderer
+  private lateinit var specialMeterRenderer: SpecialMeterRenderer
 
   override fun create() {
     camera = OrthographicCamera()
@@ -53,6 +55,7 @@ class GuitarFlashGame : ApplicationAdapter() {
     trackRenderer = TrackRenderer(layout, perspective)
     hitSpotRenderer = HitSpotRenderer(layout, perspective)
     noteRenderer = NoteRenderer(layout, perspective)
+    specialMeterRenderer = SpecialMeterRenderer(layout)
 
     // Fake notes for now: alternating normal and special sections so you can farm energy from zero.
     val notes = buildDebugChart(layout.laneCount)
@@ -81,6 +84,7 @@ class GuitarFlashGame : ApplicationAdapter() {
     trackRenderer.draw(shapeRenderer)
     hitSpotRenderer.draw(shapeRenderer)
     noteRenderer.draw(shapeRenderer, engine.notesStates, songTime, engine.special.active)
+    specialMeterRenderer.draw(shapeRenderer, engine.special)
 
     shapeRenderer.end()
   }
