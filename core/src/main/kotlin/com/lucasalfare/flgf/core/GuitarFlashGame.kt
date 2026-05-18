@@ -10,7 +10,6 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.utils.TimeUtils
 import com.badlogic.gdx.utils.viewport.FitViewport
 import kotlin.math.max
-import kotlin.random.Random
 
 /**
  * World-space config for the prototype UI.
@@ -86,6 +85,67 @@ private object LanePalette {
   fun colorForLane(lane: Int): Color = colors.getOrElse(lane) { Color(0.7f, 0.7f, 0.7f, 1f) }
 }
 
+private val specialActiveColor = Color(0.1f, 0.92f, 1f, 1f)
+private val specialIdleColor = Color(1f, 0.84f, 0.2f, 1f)
+private val brokenColor = Color(0.55f, 0.55f, 0.58f, 0.25f)
+
+private const val DEBUG_START_DELAY_MS = 1000L
+private const val DEBUG_NORMAL_NOTE_SPACING_MS = 220L
+private const val DEBUG_SPECIAL_NOTE_SPACING_MS = 150L
+private const val DEBUG_SPECIAL_SEQUENCE_SIZE = 10
+private const val DEBUG_NORMAL_RUN_SIZE = 4
+private const val DEBUG_SPECIAL_TO_BANK_GAP_MS = 420L
+private const val DEBUG_BANK_TO_NEXT_SECTION_GAP_MS = 520L
+private const val DEBUG_LOOP_COUNT = 4
+
+private fun buildDebugChart(laneCount: Int): List<Note> {
+  val notes = mutableListOf<Note>()
+  var time = DEBUG_START_DELAY_MS
+
+  fun addNormalRun(startTime: Long, laneOffset: Int, count: Int): Long {
+    var currentTime = startTime
+    repeat(count) { index ->
+      notes += Note(
+        hitTime = currentTime,
+        lane = (laneOffset + index) % laneCount
+      )
+      currentTime += DEBUG_NORMAL_NOTE_SPACING_MS
+    }
+    return currentTime
+  }
+
+  fun addSpecialPhrase(startTime: Long, laneOffset: Int): Long {
+    var currentTime = startTime
+    repeat(DEBUG_SPECIAL_SEQUENCE_SIZE) { index ->
+      notes += Note(
+        hitTime = currentTime,
+        lane = (laneOffset + index) % laneCount,
+        isSpecial = true
+      )
+      currentTime += DEBUG_SPECIAL_NOTE_SPACING_MS
+    }
+    return currentTime
+  }
+
+  time = addNormalRun(time, 0, DEBUG_NORMAL_RUN_SIZE)
+
+  repeat(DEBUG_LOOP_COUNT) { block ->
+    time += DEBUG_NORMAL_NOTE_SPACING_MS
+    time = addSpecialPhrase(time, block)
+    time += DEBUG_SPECIAL_TO_BANK_GAP_MS
+
+    notes += Note(
+      hitTime = time,
+      lane = (block + 2) % laneCount
+    )
+    time += DEBUG_BANK_TO_NEXT_SECTION_GAP_MS
+
+    time = addNormalRun(time, block + 1, DEBUG_NORMAL_RUN_SIZE)
+  }
+
+  return notes.sortedBy { it.hitTime }
+}
+
 /**
  * Draws the track background and the lane separators.
  */
@@ -135,9 +195,13 @@ class NoteRenderer(
   private val layout: PlayfieldLayout
 ) {
   private val colorInactive = Color(0.55f, 0.55f, 0.58f, 1f)
-  private val colorBrokenBody = Color(0.55f, 0.55f, 0.58f, 0.25f)
 
-  fun draw(shapeRenderer: ShapeRenderer, noteStates: List<NoteState>, songTime: Long) {
+  fun draw(
+    shapeRenderer: ShapeRenderer,
+    noteStates: List<NoteState>,
+    songTime: Long,
+    specialActive: Boolean
+  ) {
     noteStates.forEach { state ->
       val headY = yForTime(state.note.hitTime, songTime)
       val bodyTopY = yForTime(state.note.hitTime + state.note.duration, songTime)
@@ -150,8 +214,8 @@ class NoteRenderer(
       }
 
       // Draw the sustain body first so the note head sits on top.
-      drawSustainBody(shapeRenderer, state, headY, bodyTopY)
-      drawHead(shapeRenderer, state, headY)
+      drawSustainBody(shapeRenderer, state, headY, bodyTopY, specialActive)
+      drawHead(shapeRenderer, state, headY, specialActive)
     }
   }
 
@@ -160,19 +224,33 @@ class NoteRenderer(
     return layout.hitLineY + distanceMs * layout.noteSpeedPerMs
   }
 
-  private fun drawHead(shapeRenderer: ShapeRenderer, state: NoteState, headY: Float) {
+  private fun drawHead(
+    shapeRenderer: ShapeRenderer,
+    state: NoteState,
+    headY: Float,
+    specialActive: Boolean
+  ) {
     if (state.hit) return
 
-    shapeRenderer.color = if (state.missed || state.sustainBroken) {
-      colorInactive
-    } else {
-      LanePalette.colorForLane(state.note.lane)
+    val laneX = layout.xForLane(state.note.lane)
+    val laneWidth = layout.laneWidth - layout.laneGap
+
+    shapeRenderer.color = when {
+      state.missed || state.sustainBroken -> colorInactive
+      specialActive -> specialActiveColor
+      state.note.isSpecial -> specialIdleColor
+      else -> LanePalette.colorForLane(state.note.lane)
+    }
+
+    if (state.note.isSpecial) {
+      drawSpecialHead(shapeRenderer, laneX, headY, laneWidth)
+      return
     }
 
     shapeRenderer.rect(
-      layout.xForLane(state.note.lane),
+      laneX,
       headY,
-      layout.laneWidth - layout.laneGap,
+      laneWidth,
       layout.noteHeight
     )
   }
@@ -181,7 +259,8 @@ class NoteRenderer(
     shapeRenderer: ShapeRenderer,
     state: NoteState,
     headY: Float,
-    bodyTopY: Float
+    bodyTopY: Float,
+    specialActive: Boolean
   ) {
     if (state.note.duration <= 0L) return
     if (state.hit && !state.sustainBroken && state.sustainProgress >= state.note.duration) return
@@ -201,12 +280,34 @@ class NoteRenderer(
     val sustainX = laneX + (laneWidth - sustainWidth) / 2f
 
     shapeRenderer.color = when {
+      state.sustainBroken || state.missed -> brokenColor
+      state.hit && !state.sustainBroken && specialActive -> specialActiveColor.cpy().apply { a = 0.58f }
       state.hit && !state.sustainBroken -> LanePalette.colorForLane(state.note.lane).cpy().apply { a = 0.55f }
-      state.sustainBroken || state.missed -> colorBrokenBody
+      specialActive -> specialActiveColor.cpy().apply { a = 0.45f }
+      state.note.isSpecial -> specialIdleColor.cpy().apply { a = 0.45f }
       else -> LanePalette.colorForLane(state.note.lane).cpy().apply { a = 0.5f }
     }
 
     shapeRenderer.rect(sustainX, bodyStartY, sustainWidth, bodyHeight)
+  }
+
+  private fun drawSpecialHead(
+    shapeRenderer: ShapeRenderer,
+    laneX: Float,
+    headY: Float,
+    laneWidth: Float
+  ) {
+    val topY = headY + layout.noteHeight
+    val centerX = laneX + laneWidth / 2f
+
+    shapeRenderer.triangle(
+      laneX,
+      topY,
+      laneX + laneWidth,
+      topY,
+      centerX,
+      headY
+    )
   }
 }
 
@@ -269,21 +370,15 @@ class GuitarFlashGame : ApplicationAdapter() {
     hitSpotRenderer = HitSpotRenderer(layout)
     noteRenderer = NoteRenderer(layout)
 
-    // Fake notes for now; we'll switch to resources/aux_song.xml later.
-    val notes = mutableListOf(Note(hitTime = 1000L, lane = 0, duration = 2000))
-    var lastTime = 3000
-    repeat(100) {
-      var nextTime = Random.nextInt(lastTime, lastTime + 300)
-      if (nextTime - lastTime < 100) nextTime += 100
-      notes += Note(hitTime = nextTime.toLong(), lane = Random.nextInt(5))
-      lastTime = nextTime
-    }
+    // Fake notes for now: alternating normal and special sections so you can farm energy from zero.
+    val notes = buildDebugChart(layout.laneCount)
 
     engine = GameEngine(
       hitWindow = config.hitWindow,
       spawnAheadTime = config.spawnAheadTime,
       notes = notes
     )
+    engine.special.energy = 0
 
     startTime = TimeUtils.millis()
   }
@@ -301,7 +396,7 @@ class GuitarFlashGame : ApplicationAdapter() {
 
     trackRenderer.draw(shapeRenderer)
     hitSpotRenderer.draw(shapeRenderer)
-    noteRenderer.draw(shapeRenderer, engine.notesStates, songTime)
+    noteRenderer.draw(shapeRenderer, engine.notesStates, songTime, engine.special.active)
 
     shapeRenderer.end()
   }
