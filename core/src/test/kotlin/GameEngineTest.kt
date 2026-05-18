@@ -1,6 +1,9 @@
 import com.lucasalfare.flgf.core.game.GameEngine
 import com.lucasalfare.flgf.core.game.Note
 import com.lucasalfare.flgf.core.game.PlayerInput
+import com.lucasalfare.flgf.core.game.ComboMultiplierTier
+import com.lucasalfare.flgf.core.game.ScoringRules
+import com.lucasalfare.flgf.core.game.SpecialScoringRules
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 
@@ -14,6 +17,9 @@ class GameEngineTest {
 
   private fun engine(vararg notes: Note) =
     GameEngine(notes.toList(), hitWindow = 100) // 100ms
+
+  private fun engineWithRules(rules: ScoringRules, vararg notes: Note) =
+    GameEngine(notes.toList(), hitWindow = 100, scoringRules = rules)
 
   private fun pressOnce(vararg lanes: Int) =
     PlayerInput(
@@ -234,6 +240,39 @@ class GameEngineTest {
     }
 
     assertTrue(engine.score.multiplier >= 2)
+  }
+
+  @Test
+  fun `should honor custom scoring rules`() {
+    val rules = ScoringRules(
+      pointsPerHit = 120,
+      sustainPointsPerSecond = 10.0,
+      comboMultiplierTiers = listOf(ComboMultiplierTier(1, 5)),
+      special = SpecialScoringRules(
+        energyPerCompletedSpecialPhrase = 10,
+        activationEnergyThreshold = 10,
+        maximumEnergy = 20,
+        drainPerSecond = 5.0,
+        activeScoreMultiplier = 3
+      )
+    )
+
+    engine = engineWithRules(
+      rules,
+      Note(1000, 0, 1000)
+    )
+
+    engine.tick(pressOnce(0), 1000)
+
+    assertEquals(5, engine.score.multiplier)
+    assertEquals(600, engine.score.score)
+
+    engine.special.energy = 10
+    engine.special.active = true
+    engine.tick(holdOnly(0), 2000)
+
+    assertEquals(5, engine.special.energy)
+    assertEquals(750, engine.score.score)
   }
 
   @Test

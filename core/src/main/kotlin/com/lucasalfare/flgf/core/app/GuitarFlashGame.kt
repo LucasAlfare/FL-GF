@@ -29,7 +29,7 @@ class GuitarFlashGame : ApplicationAdapter() {
 
   private val config = GameConfig(
     perspective = PlayfieldPerspectiveConfig(
-      enabled = true,
+      enabled = false,
       rotationXDegrees = 70f,
       rotationYDegrees = 0f,
       rotationZDegrees = 0f
