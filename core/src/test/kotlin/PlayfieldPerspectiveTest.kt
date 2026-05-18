@@ -1,7 +1,7 @@
-import com.lucasalfare.flgf.core.GameConfig
-import com.lucasalfare.flgf.core.PlayfieldLayout
-import com.lucasalfare.flgf.core.PlayfieldPerspective
-import com.lucasalfare.flgf.core.PlayfieldPerspectiveConfig
+import com.lucasalfare.flgf.core.view.GameConfig
+import com.lucasalfare.flgf.core.view.PlayfieldLayout
+import com.lucasalfare.flgf.core.view.PlayfieldPerspective
+import com.lucasalfare.flgf.core.view.PlayfieldPerspectiveConfig
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
