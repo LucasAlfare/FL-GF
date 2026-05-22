@@ -1,5 +1,8 @@
 package com.lucasalfare.flgf.core.view
 
+import com.badlogic.gdx.graphics.Color
+import com.badlogic.gdx.graphics.Texture
+import com.badlogic.gdx.graphics.g2d.PolygonSpriteBatch
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 
 data class ProjectedPoint(val x: Float, val y: Float)
@@ -124,6 +127,70 @@ class PlayfieldPerspective(
       bottomLeft.x, bottomLeft.y,
       topRight.x, topRight.y,
       topLeft.x, topLeft.y
+    )
+  }
+
+  fun drawProjectedTexture(
+    batch: PolygonSpriteBatch,
+    texture: Texture,
+    x: Float,
+    y: Float,
+    width: Float,
+    height: Float,
+    color: Color
+  ) {
+
+    val bottomLeft = project(x, y)
+    val bottomRight = project(x + width, y)
+    val topRight = project(x + width, y + height)
+    val topLeft = project(x, y + height)
+
+    val c = color.toFloatBits()
+
+    val vertices = floatArrayOf(
+
+      // bottomLeft
+      bottomLeft.x,
+      bottomLeft.y,
+      c,
+      0f,
+      1f,
+
+      // bottomRight
+      bottomRight.x,
+      bottomRight.y,
+      c,
+      1f,
+      1f,
+
+      // topRight
+      topRight.x,
+      topRight.y,
+      c,
+      1f,
+      0f,
+
+      // topLeft
+      topLeft.x,
+      topLeft.y,
+      c,
+      0f,
+      0f
+    )
+
+    val triangles = shortArrayOf(
+      0, 1, 2,
+      2, 3, 0
+    )
+
+    batch.draw(
+      texture,
+      vertices,
+      0,
+      vertices.size,
+      triangles,
+      0,
+      triangles.size
     )
   }
 }

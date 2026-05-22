@@ -72,23 +72,44 @@ class GuitarFlashGame : ApplicationAdapter() {
   }
 
   override fun render() {
+
     Gdx.gl.glClearColor(0.06f, 0.06f, 0.08f, 1f)
     Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT)
-    Gdx.graphics.setTitle("Meu Jogo | FPS: ${Gdx.graphics.framesPerSecond}")
 
+    Gdx.graphics.setTitle(
+      "Meu Jogo | FPS: ${Gdx.graphics.framesPerSecond}"
+    )
+
+    // in the future this must come from the song player progress to sync the song properly or no?
     val songTime = TimeUtils.timeSinceMillis(startTime)
-    engine.tick(input = InputHandler.update(), currentTime = songTime)
+
+    engine.tick(
+      input = InputHandler.update(),
+      currentTime = songTime
+    )
 
     camera.update()
+
     shapeRenderer.projectionMatrix = camera.combined
+
+    // SHAPES
+
     shapeRenderer.begin(ShapeRenderer.ShapeType.Filled)
 
     trackRenderer.draw(shapeRenderer)
     hitSpotRenderer.draw(shapeRenderer)
-    noteRenderer.draw(shapeRenderer, engine.notesStates, songTime, engine.special.active)
     specialMeterRenderer.draw(shapeRenderer, engine.special)
 
     shapeRenderer.end()
+
+    // TEXTURES
+
+    noteRenderer.draw2(
+      shapeRenderer,
+      engine.notesStates,
+      songTime,
+      engine.special.active
+    )
   }
 
   override fun resize(width: Int, height: Int) {
@@ -97,6 +118,7 @@ class GuitarFlashGame : ApplicationAdapter() {
 
   override fun dispose() {
     shapeRenderer.dispose()
+    noteRenderer.dispose()
   }
 }
 
@@ -108,7 +130,7 @@ private fun buildDebugChart(laneCount: Int): List<Note> {
   val DEBUG_NORMAL_RUN_SIZE = 4
   val DEBUG_SPECIAL_TO_BANK_GAP_MS = 420L
   val DEBUG_BANK_TO_NEXT_SECTION_GAP_MS = 520L
-  val DEBUG_LOOP_COUNT = 4
+  val DEBUG_LOOP_COUNT = 10
 
   val notes = mutableListOf<Note>()
   var time = DEBUG_START_DELAY_MS
