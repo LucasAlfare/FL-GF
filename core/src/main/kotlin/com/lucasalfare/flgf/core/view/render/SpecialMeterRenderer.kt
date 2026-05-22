@@ -14,24 +14,24 @@ import com.lucasalfare.flgf.core.view.SpecialMeterConfig
 class SpecialMeterRenderer(
   private val layout: PlayfieldLayout,
   private val perspective: PlayfieldPerspective,
-  private val config: SpecialMeterConfig = SpecialMeterConfig()
+  private val specificSpecialConfig: SpecialMeterConfig = SpecialMeterConfig()
 ) {
   fun draw(shapeRenderer: ShapeRenderer, special: SpecialState) {
-    val x = layout.left + layout.width + config.marginRight
-    val y = layout.bottom + config.marginBottom
-    val clampedEnergy = special.energy.coerceIn(0, config.maximumEnergy)
-    val innerWidth = (config.width - config.innerPadding * 2f).coerceAtLeast(0f)
-    val innerHeight = (config.height - config.innerPadding * 2f).coerceAtLeast(0f)
-    val filledHeight = innerHeight * (clampedEnergy / config.maximumEnergy.toFloat())
+    val x = layout.left + layout.width + specificSpecialConfig.marginRight
+    val y = layout.bottom + specificSpecialConfig.marginBottom
+    val clampedEnergy = special.energy.coerceIn(0, specificSpecialConfig.maximumEnergy)
+    val innerWidth = (specificSpecialConfig.width - specificSpecialConfig.innerPadding * 2f).coerceAtLeast(0f)
+    val innerHeight = (specificSpecialConfig.height - specificSpecialConfig.innerPadding * 2f).coerceAtLeast(0f)
+    val filledHeight = innerHeight * (clampedEnergy / specificSpecialConfig.maximumEnergy.toFloat())
 
-    shapeRenderer.color = config.backgroundColor
-    perspective.drawProjectedRect(shapeRenderer, x, y, config.width, config.height)
+    shapeRenderer.color = specificSpecialConfig.backgroundColor
+    perspective.drawProjectedRect(shapeRenderer, x, y, specificSpecialConfig.width, specificSpecialConfig.height)
 
-    shapeRenderer.color = if (special.active) config.activeFillColor else config.fillColor
+    shapeRenderer.color = if (special.active) specificSpecialConfig.activeFillColor else specificSpecialConfig.fillColor
     perspective.drawProjectedRect(
       shapeRenderer,
-      x + config.innerPadding,
-      y + config.innerPadding,
+      x + specificSpecialConfig.innerPadding,
+      y + specificSpecialConfig.innerPadding,
       innerWidth,
       filledHeight
     )

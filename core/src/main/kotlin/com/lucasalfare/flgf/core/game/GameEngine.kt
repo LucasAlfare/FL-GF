@@ -34,7 +34,15 @@ class GameEngine(
   private var nextIndex = 0
   private var specialDisabledUntilTime: Long = Long.MIN_VALUE
 
+  // Índice por lane: evita scan linear em findClosestPendingNoteForLane
+  private val notesByLane = mutableMapOf<Int, MutableList<NoteState>>()
+
+  // Cache de despawnTime: evita recalcular a cada frame no cleanup
+  private val despawnTimeCache = mutableMapOf<Note, Long>()
+
+  // API pública mantida: iteração externa continua funcionando
   val notesStates = mutableListOf<NoteState>()
+
   val score = ScoreState()
   val special = SpecialState()
 
@@ -52,28 +60,36 @@ class GameEngine(
   private fun spawnNotes() {
     while (nextIndex < notes.size && notes[nextIndex].hitTime <= time + spawnAheadTime) {
       val note = notes[nextIndex]
-      notesStates.add(
-        NoteState(
-          note = note,
-          specialDisabled = note.isSpecial && note.hitTime < specialDisabledUntilTime,
-          specialPhraseEnd = nextIndex in specialPhraseEndIndices
-        )
+      val state = NoteState(
+        note = note,
+        specialDisabled = note.isSpecial && note.hitTime < specialDisabledUntilTime,
+        specialPhraseEnd = nextIndex in specialPhraseEndIndices
       )
+      notesStates.add(state)
+      notesByLane.getOrPut(note.lane) { mutableListOf() }.add(state)
+      despawnTimeCache[note] = despawnTime(note)
       nextIndex++
     }
   }
 
   private fun resolveMissedNotes() {
-    val missedNotes = notesStates
-      .filter { !it.hit && !it.missed && time > it.note.hitTime + hitWindow }
-      .sortedBy { it.note.hitTime }
+    // Saída antecipada: sem notas pendentes, sem custo
+    if (notesStates.isEmpty()) return
 
-    if (missedNotes.isEmpty()) return
+    var hadMiss = false
+    for (state in notesStates) {
+      if (!state.hit && !state.missed && time > state.note.hitTime + hitWindow) {
+        state.missed = true
+        hadMiss = true
+      }
+    }
 
+    if (!hadMiss) return
+
+    // resetCombo e onNoteMiss só rodam quando realmente há miss
     scoring.resetCombo(score)
-    missedNotes.forEach {
-      it.missed = true
-      onNoteMiss(it)
+    for (state in notesStates) {
+      if (state.missed && !state.hit) onNoteMiss(state)
     }
   }
 
@@ -89,7 +105,6 @@ class GameEngine(
         hasWrongInput = true
         return@forEach
       }
-
       noteState.hit = true
       noteState.holding = noteState.note.duration > 0
       hitNotes += noteState
@@ -104,10 +119,11 @@ class GameEngine(
   }
 
   private fun findClosestPendingNoteForLane(lane: Int): NoteState? {
-    return notesStates
+    // Busca só nas notas da lane — O(k) onde k é notas visíveis nessa lane
+    val candidates = notesByLane[lane] ?: return null
+    return candidates
       .asSequence()
-      .filter { !it.hit && !it.missed && it.note.lane == lane }
-      .filter { abs(time - it.note.hitTime) <= hitWindow }
+      .filter { !it.hit && !it.missed && abs(time - it.note.hitTime) <= hitWindow }
       .minWithOrNull(compareBy({ abs(time - it.note.hitTime) }, { it.note.hitTime }))
   }
 
@@ -139,11 +155,23 @@ class GameEngine(
 
     special.sequenceBroken = true
 
-    val currentIndex = notes.indexOfFirst { it == noteState.note }
-    val sequenceEndTime = notes
-      .drop(currentIndex + 1)
-      .firstOrNull { !it.isSpecial }
-      ?.hitTime ?: Long.MAX_VALUE
+    // Substituído indexOfFirst + drop por uma única passagem com índice
+    var currentIndex = -1
+    var sequenceEndTime = Long.MAX_VALUE
+    for (i in notes.indices) {
+      if (notes[i] === noteState.note) {
+        currentIndex = i
+        break
+      }
+    }
+    if (currentIndex != -1) {
+      for (i in currentIndex + 1 until notes.size) {
+        if (!notes[i].isSpecial) {
+          sequenceEndTime = notes[i].hitTime
+          break
+        }
+      }
+    }
 
     specialDisabledUntilTime = sequenceEndTime
 
@@ -173,23 +201,17 @@ class GameEngine(
     notesStates.forEach {
       if (!it.holding) return@forEach
       val remaining = it.note.duration - it.sustainProgress
-
       if (remaining <= 0.0) {
         it.holding = false
         return@forEach
       }
-
       val laneReleasedThisFrame = it.note.lane in input.justReleasedFrets
       val laneStillHeld = it.note.lane in input.pressedFrets
-
       if (laneReleasedThisFrame || !laneStillHeld) {
         it.holding = false
-        if (it.sustainProgress < it.note.duration) {
-          it.sustainBroken = true
-        }
+        if (it.sustainProgress < it.note.duration) it.sustainBroken = true
         return@forEach
       }
-
       val delta = minOf(dt.toDouble(), remaining)
       scoring.registerSustain(score, delta, special.active)
       it.sustainProgress += delta
@@ -202,8 +224,15 @@ class GameEngine(
   }
 
   private fun cleanup() {
-    // Sustain notes need to remain alive until the tail has fully left the screen.
-    notesStates.removeIf { (it.missed || it.hit) && time > despawnTime(it.note) }
+    val iterator = notesStates.iterator()
+    while (iterator.hasNext()) {
+      val state = iterator.next()
+      if ((state.missed || state.hit) && time > (despawnTimeCache[state.note] ?: despawnTime(state.note))) {
+        iterator.remove()
+        notesByLane[state.note.lane]?.remove(state)
+        despawnTimeCache.remove(state.note)
+      }
+    }
   }
 
   private fun despawnTime(note: Note): Long {
@@ -213,15 +242,11 @@ class GameEngine(
 
   private fun buildSpecialPhraseEndIndices(notes: List<Note>): Set<Int> {
     if (notes.isEmpty()) return emptySet()
-
     val ends = mutableSetOf<Int>()
     notes.forEachIndexed { index, note ->
       if (!note.isSpecial) return@forEachIndexed
-
       val nextNote = notes.getOrNull(index + 1)
-      if (nextNote == null || !nextNote.isSpecial) {
-        ends += index
-      }
+      if (nextNote == null || !nextNote.isSpecial) ends += index
     }
     return ends
   }

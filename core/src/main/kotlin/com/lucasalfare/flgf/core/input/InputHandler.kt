@@ -4,33 +4,40 @@ import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.Input
 import com.lucasalfare.flgf.core.game.PlayerInput
 
-// This input helper can stay simple for now. TODO: in the future implement this using bit masking, to avoid allocations
 object InputHandler {
   private val laneKeys = intArrayOf(
-    Input.Keys.E,
-    Input.Keys.T,
-    Input.Keys.U,
-    Input.Keys.I,
-    Input.Keys.O
+    Input.Keys.E, Input.Keys.T, Input.Keys.U, Input.Keys.I, Input.Keys.O
   )
-  private val previousPressed = BooleanArray(laneKeys.size)
+  private var previousMask: Int = 0
+
+  private val pressedSet = mutableSetOf<Int>()
+  private val justPressedSet = mutableSetOf<Int>()
+  private val justReleasedSet = mutableSetOf<Int>()
 
   fun update(): PlayerInput {
-    val pressed = BooleanArray(laneKeys.size)
-    val justPressed = BooleanArray(laneKeys.size)
-    val justReleased = BooleanArray(laneKeys.size)
+    var pressed = 0
+    for (i in laneKeys.indices) {
+      if (Gdx.input.isKeyPressed(laneKeys[i])) pressed = pressed or (1 shl i)
+    }
 
-    for (lane in laneKeys.indices) {
-      pressed[lane] = Gdx.input.isKeyPressed(laneKeys[lane])
-      justPressed[lane] = pressed[lane] && !previousPressed[lane]
-      justReleased[lane] = !pressed[lane] && previousPressed[lane]
-      previousPressed[lane] = pressed[lane]
+    val justPressed = pressed and previousMask.inv()
+    val justReleased = previousMask and pressed.inv()
+    previousMask = pressed
+
+    pressedSet.clear()
+    justPressedSet.clear()
+    justReleasedSet.clear()
+
+    for (i in laneKeys.indices) {
+      if ((pressed shr i) and 1 == 1) pressedSet.add(i)
+      if ((justPressed shr i) and 1 == 1) justPressedSet.add(i)
+      if ((justReleased shr i) and 1 == 1) justReleasedSet.add(i)
     }
 
     return PlayerInput(
-      pressedFrets = pressed.indices.filter { pressed[it] }.toSet(),
-      justPressedFrets = justPressed.indices.filter { justPressed[it] }.toSet(),
-      justReleasedFrets = justReleased.indices.filter { justReleased[it] }.toSet(),
+      pressedFrets = pressedSet,
+      justPressedFrets = justPressedSet,
+      justReleasedFrets = justReleasedSet,
       activateSpecial = Gdx.input.isKeyJustPressed(Input.Keys.SPACE)
     )
   }

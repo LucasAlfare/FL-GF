@@ -33,7 +33,8 @@ class GuitarFlashGame : ApplicationAdapter() {
       enabled = true,
       rotationXDegrees = 70f,
       rotationYDegrees = 0f,
-      rotationZDegrees = 0f
+      rotationZDegrees = 0f,
+      cameraDistanceMultiplier = 6f
     )
   )
   private val layout = PlayfieldLayout(config)
@@ -73,6 +74,7 @@ class GuitarFlashGame : ApplicationAdapter() {
   override fun render() {
     Gdx.gl.glClearColor(0.06f, 0.06f, 0.08f, 1f)
     Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT)
+    Gdx.graphics.setTitle("Meu Jogo | FPS: ${Gdx.graphics.framesPerSecond}")
 
     val songTime = TimeUtils.timeSinceMillis(startTime)
     engine.tick(input = InputHandler.update(), currentTime = songTime)

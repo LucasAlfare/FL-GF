@@ -9,7 +9,7 @@ import kotlin.math.max
 data class GameConfig(
   val noteSpeedPerMs: Float = 0.001975f,
   val playfieldWidth: Float = 0.72f,
-  val playfieldHeight: Float = 4f, //4f considerando rotação no eixo em 70f; 2f se 0f de rotação
+  var playfieldHeight: Float = 4.5f, //4f considerando rotação no eixo X em 70f; 2f se 0f de rotação
   val playfieldCenterX: Float = 0.5f,
   val playfieldCenterY: Float = 1.0f,
   val hitLineInsetFromBottom: Float = 0.14f,
@@ -24,4 +24,11 @@ data class GameConfig(
    */
   val spawnAheadTime: Long
     get() = (trackTravelHeight / noteSpeedPerMs).toLong()
+
+  // temporary init block? ok...
+  init {
+    if (perspective.enabled) {
+      playfieldHeight = if (perspective.rotationZDegrees == 70f) 4.5f else 2f
+    }
+  }
 }
